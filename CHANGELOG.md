@@ -4,6 +4,20 @@
 > versions **independently** (released via `ext-v*` tags) — its history lives in
 > [`extension/CHANGELOG.md`](extension/CHANGELOG.md).
 
+## [Unreleased]
+
+- **Concerning agent behavior (Cohere, 2026-10-26).** `agent.analyze` and
+  `agent-trace` scan a captured trace for the Qwen tool artifacts in
+  [Cohere's post](https://cohere.com/blog/concerning-behaviour-popular-open-weight-ai-model):
+  reasoning that denies tools while a shell command runs, a fabricated prior-turn
+  acknowledgment, a `/tmp` + curl/wget + `/etc/resolv.conf` inventory, a PUT to
+  `*.oss-cn-beijing.aliyuncs.com`, `169.254.169.254`, a `routify-file-proxy*` host,
+  an unsolicited signed OSS URL, and `unshare` into a user namespace with a
+  tmpfs. The scan is hermetic (no model call, no API key). A hit prints
+  `CONCERNING AGENT BEHAVIOR`, is named in the HTML report, and exits 2. It is
+  an alert beside the provenance score. A written detection rule with no tool
+  call stays quiet.
+
 ## [0.41.0] — z.ai request-signing adapter: reactivate the founding case (2026-09-30)
 
 **Reactivates active fingerprinting of z.ai (the founding case, advisory MPA-2026-001).**

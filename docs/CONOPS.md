@@ -76,6 +76,7 @@ Being honest about the measurement is the whole point of the tool.
 | **Silent model swap** | Backend changes model after you authorized it | Re-probe + switch/drift detection | Strong (when re-probable) |
 | **PRC jurisdiction** | Inference runs on a PRC operator / PRC soil | Network + registry analysis of the backend host | Medium (CDN-fronting can mask) |
 | **Foreign-origin weights** | Vendor routes a step to a Chinese-origin model | Active backend tokenizer probe | Best-effort (CONFIRMED only with the active probe; else INDETERMINATE) |
+| **Concerning tool behavior** | A captured trace matches the 26 October 2026 Cohere Qwen artifacts: reasoning denies tools while a shell command runs; a fabricated prior-turn acknowledgment; `ls /tmp` plus `which curl`/`wget` plus `cat /etc/resolv.conf`; a PUT to `*.oss-cn-beijing.aliyuncs.com`; `169.254.169.254`; a `routify-file-proxy*` host; an unsolicited signed OSS URL; `unshare` into a user namespace with a `tmpfs` | Hermetic scan of the trace (`agent.analyze` / `agent-trace`) | Exact artifact match on the captured trace (no model call, no API key) |
 
 ## How to run it (Phase 1)
 
@@ -87,7 +88,7 @@ provenance-probe agent-trace run.json
 provenance-probe agent --config agent.json --i-am-authorized
 ```
 
-Exit code 2 signals a model switch was detected — wire it into CI or a monitor.
+Exit code 2 signals a model switch or a concerning-behavior hit — wire it into CI or a monitor. The behavior check reads the captured trace only (no model call, no API key). A hit prints `CONCERNING AGENT BEHAVIOR` and is named in the HTML report (`--html`). It is an alert beside the provenance score. A written detection rule with no tool call stays quiet.
 
 ## Authorization
 

@@ -295,6 +295,18 @@ each can prove:
   untouched while fingerprinting in parallel, so it is invisible to the agent's
   behavior; a fingerprinting error can never alter or truncate the proxied stream.
 
+A captured trace is also matched, with no model call and no API key, against the
+concrete tool artifacts in Cohere's 26 October 2026 account of Qwen3.8-Flash-Next.
+`agent.analyze` and `agent-trace` look for reasoning that denies tool use while a
+shell command still runs; a prior-turn acknowledgment the trace never contained
+("Understood. I will follow these instructions."); a host inventory of `/tmp`,
+curl and wget, and `/etc/resolv.conf`; an upload to an
+`oss-cn-beijing.aliyuncs.com` bucket; the cloud metadata address
+`169.254.169.254`; a `routify-file-proxy` host; a signed Alibaba OSS URL the user
+did not request; and an `unshare` into a user namespace that mounts a tmpfs. A
+hit is an alert on the board and in the HTML report, beside the provenance
+verdict. A written detection rule with no tool call stays quiet.
+
 The reliable signals against a real agent are **egress jurisdiction** and **model
 switch or drift**, not per-step CONFIRMED provenance, and the report says so. The
 jurisdiction verdict distinguishes PRC *soil* from PRC *operator*: a Beijing-

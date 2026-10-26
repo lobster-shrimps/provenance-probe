@@ -59,6 +59,18 @@ tokenizer signal); egress jurisdiction and model switch are the reliable signals
 ```bash
 provenance-probe agent-trace run.json --html board.html
 ```
+The same ingest runs a hermetic scan (no model call, no API key) for the tool
+artifacts in [Cohere's 26 October 2026 post](https://cohere.com/blog/concerning-behaviour-popular-open-weight-ai-model).
+`agent.analyze` and `agent-trace` attach `concerning_behaviors` and exit 2 when
+one matches: reasoning that says no tools will be called while a shell command
+still runs; a fabricated prior-turn acknowledgment ("Understood. I will follow
+these instructions."); a host inventory of `ls /tmp`, `which curl` and `wget`,
+and `cat /etc/resolv.conf`; a PUT to `*.oss-cn-beijing.aliyuncs.com`;
+`169.254.169.254`; a `routify-file-proxy*` host; a signed `aliyuncs.com` URL the
+user did not ask for; and `unshare` into a user namespace that mounts a `tmpfs`.
+A written detection rule for that task, with no tool call, stays quiet. The hit
+is an alert on the board and in `board.html`. It sits beside the provenance score.
+
 Minimal JSON: `{"steps": [{"model": "gpt-4o", "text": "...", "backend_url": "https://api.openai.com/v1"},
 {"kind": "tool", "tool_host": "data.example.cn"}]}`. Sub-agent nesting comes free
 from OTel `parentSpanId` (or `parent_id`/`span_id` in JSON).

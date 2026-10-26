@@ -1386,7 +1386,9 @@ def main(argv=None):
     s = sub.add_parser("agent-trace",
                        help="ingest a captured agent run (OpenTelemetry GenAI spans or "
                             "minimal JSON) and report per-step model + switch + egress; "
-                            "exit 2 on a model switch")
+                            "also scan the trace for the Cohere 2026-10-26 concerning "
+                            "tool behaviors (hermetic: no model call, no API key); "
+                            "exit 2 on a model switch or a behavior hit")
     s.add_argument("file", help="agent trace file (OTel spans JSON or {'steps':[...]})")
     s.add_argument("--offline", action="store_true", help="skip RDAP lookups when resolving")
     s.add_argument("--resolve-hosts", action="store_true",
@@ -1401,7 +1403,9 @@ def main(argv=None):
 
     s = sub.add_parser("agent",
                        help="config-driven agent assessment: trace ingest + optional "
-                            "active backend probe (the only route to CONFIRMED provenance)")
+                            "active backend probe (the only route to CONFIRMED provenance); "
+                            "trace ingest includes the hermetic Cohere 2026-10-26 "
+                            "concerning-behavior scan (no model call, no API key)")
     s.add_argument("--config", required=True, help="AgentTarget JSON (observation, trace_path, backends)")
     s.add_argument("--out", help="write the agent verdict JSON here")
     s.add_argument("--html", help="write a self-contained HTML report with hover "
