@@ -33,6 +33,10 @@ the artifact is reproducible and signable, exactly like `build_registry` /
 """
 from __future__ import annotations
 
+import html
+import json
+from urllib.parse import urlsplit
+
 from .data import corpus
 
 # Deterministic version stamp: use the corpus version (no live date) so two runs
@@ -274,3 +278,81 @@ def build_service_catalog() -> dict:
         "service_count": len(services),
         "services": services,
     }
+
+
+# Addresses a first-timer can check without typing a URL. Each host is already
+# in the corpus. Each path is the public API root this repo already records.
+# A pick fills the probe form. It is not a measured verdict.
+_PROBE_PICKS = (
+    {"id": "openai", "label": "OpenAI", "name": "OpenAI",
+     "base_url": "https://api.openai.com/v1", "api_style": "openai", "model": ""},
+    {"id": "anthropic", "label": "Anthropic", "name": "Anthropic",
+     "base_url": "https://api.anthropic.com", "api_style": "anthropic", "model": ""},
+    {"id": "mistral", "label": "Mistral", "name": "Mistral",
+     "base_url": "https://api.mistral.ai/v1", "api_style": "openai", "model": ""},
+    {"id": "deepseek", "label": "DeepSeek", "name": "DeepSeek",
+     "base_url": "https://api.deepseek.com/v1", "api_style": "openai", "model": ""},
+)
+
+
+def probe_picks() -> tuple[dict, ...]:
+    """The short service list on the probe form and on /watch."""
+    known = (set(corpus.FIRST_PARTY_ENDPOINTS) | set(corpus.PRC_ENDPOINTS)
+             | set(corpus.AGGREGATOR_ENDPOINTS))
+    out = []
+    for pick in _PROBE_PICKS:
+        host = urlsplit(pick["base_url"]).hostname or ""
+        if host not in known:
+            raise ValueError(f"probe pick {pick['id']} host {host} is not in the corpus")
+        if pick["api_style"] not in ("openai", "anthropic"):
+            raise ValueError(f"probe pick {pick['id']} has an unsupported API style")
+        out.append(dict(pick))
+    return tuple(out)
+
+
+def probe_picks_json() -> str:
+    """JSON for the page script. `<` is escaped so a label cannot close the script."""
+    return json.dumps(list(probe_picks()), ensure_ascii=True).replace("<", "\\u003c")
+
+
+def probe_pick_select_html() -> str:
+    """The picker control. Option text is escaped. No API key is included."""
+    opts = ['<option value="">Type an address instead</option>']
+    for pick in probe_picks():
+        opts.append(
+            f'<option value="{html.escape(pick["id"], quote=True)}">'
+            f'{html.escape(pick["label"])}</option>')
+    return (
+        '<div class="row"><label for="service_pick">Pick a service</label>'
+        '<select id="service_pick" onchange="applyServicePick()">'
+        + "".join(opts) +
+        '</select>'
+        '<p class="hint">Choosing a service fills in its address. Add a key only if '
+        'that service asks for one, then run. The result leads with one plain next '
+        'step, and you can watch it for a later swap. For a website you log into, '
+        '<a href="/wizard">add that target</a> instead.</p></div>'
+    )
+
+
+def probe_pick_script() -> str:
+    """Fill the existing form fields from the pick. Does not touch the API key."""
+    return (
+        "const SERVICE_PICKS = " + probe_picks_json() + ";\n"
+        "function applyServicePick(){\n"
+        " const id=$('service_pick')&&$('service_pick').value;\n"
+        " const p=(SERVICE_PICKS||[]).find(function(x){return x.id===id});\n"
+        " if(!p) return;\n"
+        " if($('base_url')) $('base_url').value=p.base_url;\n"
+        " if($('name')) $('name').value=p.name;\n"
+        " if($('api_style')) $('api_style').value=p.api_style;\n"
+        " if(p.model && $('model')) $('model').value=p.model;\n"
+        " if(typeof toggleTmpl==='function') toggleTmpl();\n"
+        "}\n"
+        "function initServicePick(){\n"
+        " const q=new URLSearchParams(location.search);\n"
+        " const id=q.get('pick');\n"
+        " if(!id||!$('service_pick')||q.get('base_url')) return;\n"
+        " $('service_pick').value=id;\n"
+        " if($('service_pick').value===id) applyServicePick();\n"
+        "}\n"
+    )

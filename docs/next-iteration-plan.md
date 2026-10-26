@@ -53,11 +53,13 @@ broken scan is distinct from found exposure). A deterministic `EXPOSURE:` summar
 line appears in every format. Default `none` preserves prior behavior. See
 `docs/fleet-rollup.md`.
 
-### WS4 — Self-service check — DEFERRED
+### WS4 — Self-service check — lean pass
 
-The self-serve surfaces (the hosted `serve` wizard, the capture extension, `watch`)
-already function and inherit WS2's legibility. Further polish is deferred until
-there is a concrete driver for it.
+The hosted `serve` wizard, the capture extension, and `/watch` stay as they are.
+A first-timer picks a known service on the probe form or on `/watch`. The address
+comes from `servicecatalog.probe_picks` (corpus hosts only). They run, read the
+existing `explain.plain_action` sentence, and can open Watch this. A website they
+log into still uses the wizard. No new product surface.
 
 ## Notes
 

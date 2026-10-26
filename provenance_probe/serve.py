@@ -512,7 +512,14 @@ def watch_page():
                              "https://lobster-shrimp.github.io/provenance-observatory/")
     doc = _doc("Watch · provenance-probe", WATCH_PAGE, right=_ui_nav()) \
         .replace("__OBSERVATORY_URL__", html.escape(obs_url))
-    return Response(doc, mimetype="text/html")
+    return Response(_with_service_pick(doc), mimetype="text/html")
+
+
+def _with_service_pick(doc: str) -> str:
+    """Drop the shared service picker into a page that reserved the two slots."""
+    from . import servicecatalog
+    return (doc.replace("__SERVICE_PICK_HTML__", servicecatalog.probe_pick_select_html())
+            .replace("__SERVICE_PICK_JS__", servicecatalog.probe_pick_script()))
 
 
 @app.get("/")
@@ -534,7 +541,7 @@ def index():
            .replace("__MISSION_BODY__", html.escape(explain.MISSION_BODY))
            .replace("__FLOW__", explain.flow_html())
            .replace("__OBSERVATORY_URL__", html.escape(obs_url)))
-    return Response(doc, mimetype="text/html")
+    return Response(_with_service_pick(doc), mimetype="text/html")
 
 
 # Body fragment (rendered inside _doc, which supplies the poster + shared CSS).
@@ -1741,7 +1748,7 @@ PAGE = r"""<section style="margin-bottom:24px">
 <section aria-label="Start here" style="margin:0 0 26px">
 <p class="seclabel" style="margin:0 0 6px">Start here &mdash; three steps</p>
 <ol class="steps" style="max-width:66ch">
- <li><b>Quick check &mdash; safe, no login.</b><span class="sub">See what an app claims and where its requests go, sending nothing sensitive. <a href="#probe">Probe an endpoint &darr;</a></span></li>
+ <li><b>Quick check.</b><span class="sub">Pick a service you use, run the check, and read the one next step. <a href="#probe">Pick a service &darr;</a></span></li>
  <li><b>Deep scan.</b><span class="sub">Find out which model is <i>really</i> answering. You log in yourself &mdash; your login is never recorded. <a href="/wizard">Add a target &rarr;</a></span></li>
  <li><b>Watch for swaps.</b><span class="sub">Get alerted if the model silently changes later. <a href="/watch">Set up a watch &rarr;</a></span></li>
 </ol>
@@ -1789,6 +1796,7 @@ __FLOW__
 </figure>
 
 <div class=card id=probe>
+ __SERVICE_PICK_HTML__
  <div class="row grid3">
   <div><label>Endpoint base URL</label>
    <input type=text id=base_url placeholder="https://api.vendor.example/v1"></div>
@@ -1872,6 +1880,7 @@ __FLOW__
 <div class=card><h3>Local run history</h3><div id=hist class=stat>none yet</div></div>
 <script>
 const $=i=>document.getElementById(i);
+__SERVICE_PICK_JS__
 let timer=null;
 function toggleTmpl(){$('tmpl').classList.toggle('hide',$('api_style').value!=='template')}
 // Inline, plain-language form validation + failure messages, shown in #probe_err
@@ -2041,6 +2050,7 @@ function prefillFromQuery(){
  if(q.get('chat_path')&&$('chat_path'))$('chat_path').value=q.get('chat_path');
 }
 prefillFromQuery();
+initServicePick();
 loadHist();
 </script>"""
 
@@ -2073,6 +2083,7 @@ or track the service on the
 <a href="__OBSERVATORY_URL__" target="_blank" rel="noopener noreferrer">Observatory &#8599;</a>.</div></div>
 
 <div class="card" id=cfg>
+ __SERVICE_PICK_HTML__
  <div class="row grid3">
   <div><label>Endpoint base URL</label>
    <input type=text id=base_url placeholder="https://api.vendor.example/v1"></div>
@@ -2141,6 +2152,7 @@ or track the service on the
 
 <script>
 const $=i=>document.getElementById(i);
+__SERVICE_PICK_JS__
 // Escape EVERY value that reaches innerHTML (probe-derived or user-entered).
 function esc(s){return (s==null?'':String(s)).replace(/[<>&"']/g,c=>(
  {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -2342,6 +2354,7 @@ function prefillFromQuery(){
   'stream_delta_path'].forEach(k=>set(k,k));
 }
 prefillFromQuery();
+initServicePick();
 </script>"""
 
 
