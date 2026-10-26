@@ -328,12 +328,22 @@ def _print_agent_board(result: dict, title: str):
             print(f"    step {sw['at_step']} [{sw['reason']}]: {sw['from']} -> {sw['to']}")
     else:
         print("\n  No model switch detected across steps.")
+    behs = v.get("concerning_behaviors") or []
+    if behs:
+        print("\n  CONCERNING AGENT BEHAVIOR:")
+        for b in behs:
+            ind = f" [{b['indicator']}]" if b.get("indicator") else ""
+            print(f"    - {b['id']}{ind}: {b['summary']}")
     print(f"\n  AGENT VERDICT: {v['label']}  "
           f"(provenance {v['provenance_verdict']} / jurisdiction {v['jurisdiction_verdict']}, "
           f"worst of {v['steps']} steps)")
     if v.get("alert") and not v["model_switches"]:
-        print(f"  ALERT: worst step is {v['worst_step_verdict']} (no switch, but a "
-              f"LIKELY/CONFIRMED step is present).")
+        if v.get("worst_step_verdict") in ("LIKELY", "CONFIRMED"):
+            print(f"  ALERT: worst step is {v['worst_step_verdict']} (no switch, but a "
+                  f"LIKELY/CONFIRMED step is present).")
+        elif behs:
+            print("  ALERT: concerning agent behavior in the captured tool trace "
+                  "(a reasoning denial is not a control).")
     print("  Note: trace-only provenance floors at INDETERMINATE; CONFIRMED needs an "
           "active backend probe.")
 

@@ -130,6 +130,10 @@ def _narrative(result: dict) -> list[str]:
     if not flagged:
         out.append("No PRC provenance or jurisdiction signal on any step — clean on the "
                    "evidence captured.")
+    for beh in v.get("concerning_behaviors") or []:
+        ind = f" ({html.escape(str(beh['indicator']))})" if beh.get("indicator") else ""
+        out.append(f"Concerning agent behavior <b>{html.escape(str(beh.get('id') or ''))}</b>"
+                   f"{ind}: {html.escape(str(beh.get('summary') or ''))}")
     if v.get("ordering_incomplete"):
         out.append("<b>Note:</b> some steps arrived unordered (concurrent calls); "
                    "switch claims were withheld for them, so the switch view is incomplete.")
@@ -154,6 +158,9 @@ def _what_we_did(result: dict) -> list[tuple[str, str]]:
     else:
         did.append(("active probe", "Not run (no reachable authorized backend), so "
                                     "provenance is trace-only and floors at INDETERMINATE."))
+    if result["verdict"].get("concerning_behaviors"):
+        did.append(("behavior", "Matched captured reasoning and tool commands against the "
+                                "2026-10-26 Cohere open-weight agent behaviors."))
     return did
 
 
@@ -228,8 +235,13 @@ def render_html(result: dict, title: str, *, fragment: bool = False) -> str:
 
     alert = ""
     if v.get("alert"):
+        behs = v.get("concerning_behaviors") or []
+        extra = ""
+        if behs:
+            extra = " Concerning agent behavior: " + ", ".join(
+                str(b.get("id") or "") for b in behs) + "."
         alert = (f'<p class="alertline">{_tip("ALERT", "alert")}: worst step is '
-                 f'{_tier(v["worst_step_verdict"])} — exit code 2.</p>')
+                 f'{_tier(v["worst_step_verdict"])} — exit code 2.{html.escape(extra)}</p>')
 
     glossary_rows = "".join(
         f'<tr><td class="mono">{html.escape(k)}</td><td>{html.escape(val)}</td></tr>'

@@ -24,7 +24,7 @@ import os
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
-from . import scoring
+from . import agent_behaviors, scoring
 from .probes import network
 from .probes import transcript as _tx
 
@@ -52,6 +52,8 @@ class AgentStep:
     # --- sub-agent call graph (E6) -------------------------------------------
     span_id: str | None = None      # this step's id (OTel spanId)
     parent_id: str | None = None    # the id of the step/agent that spawned it
+    command: str = ""               # tool command / arguments (behavior scan)
+    reasoning: str = ""             # chain-of-thought, when the trace kept it separate
 
 
 class TraceError(ValueError):
@@ -89,12 +91,18 @@ def _parse_otel(obj: dict) -> list[AgentStep]:
         is_tool = bool(tool_name) or op in ("execute_tool", "tool")
         span_id = sp.get("spanId") or attrs.get("span.id")
         parent_id = sp.get("parentSpanId") or attrs.get("span.parent_id")
+        command = _as_text(attrs.get("gen_ai.tool.call.arguments")
+                           or attrs.get("gen_ai.tool.arguments"))
+        reasoning = _as_text(attrs.get("gen_ai.reasoning") or attrs.get("gen_ai.reasoning.text"))
         if is_tool:
             host = _host_of(attrs.get("server.address") or attrs.get("url.full")
                             or attrs.get("http.url"))
             steps.append(AgentStep(index=i, kind="tool",
                                    name=str(tool_name or sp.get("name") or f"call#{i}"),
-                                   tool_host=host, span_id=span_id, parent_id=parent_id))
+                                   tool_host=host, span_id=span_id, parent_id=parent_id,
+                                   command=command, reasoning=reasoning,
+                                   text=_as_text(attrs.get("gen_ai.completion")
+                                                 or attrs.get("gen_ai.response.text"))))
         else:
             model = (attrs.get("gen_ai.response.model")
                      or attrs.get("gen_ai.request.model"))
@@ -105,7 +113,8 @@ def _parse_otel(obj: dict) -> list[AgentStep]:
                 text=str(attrs.get("gen_ai.completion") or attrs.get("gen_ai.response.text") or ""),
                 backend_url=attrs.get("server.address") or attrs.get("gen_ai.system.endpoint"),
                 prompt_tokens=_as_int(attrs.get("gen_ai.usage.input_tokens")),
-                span_id=span_id, parent_id=parent_id))
+                span_id=span_id, parent_id=parent_id,
+                command=command, reasoning=reasoning))
     return steps
 
 
@@ -148,6 +157,16 @@ def _as_int(x):
         return None
 
 
+def _as_text(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, sort_keys=True, ensure_ascii=False)
+    return str(value)
+
+
 def _parse_json(obj) -> list[AgentStep]:
     """Minimal hand-rolled fallback: {"steps":[{model,text,tool_host,backend_url,prompt_tokens}]}
     or a bare list of such step dicts."""
@@ -165,7 +184,9 @@ def _parse_json(obj) -> list[AgentStep]:
             echoed_model=r.get("model"), text=str(r.get("text") or ""),
             tool_host=host, backend_url=r.get("backend_url"),
             prompt_tokens=_as_int(r.get("prompt_tokens")),
-            span_id=r.get("span_id"), parent_id=r.get("parent_id")))
+            span_id=r.get("span_id"), parent_id=r.get("parent_id"),
+            command=_as_text(r.get("command") or r.get("tool_input") or r.get("arguments")),
+            reasoning=_as_text(r.get("reasoning") or r.get("thinking"))))
     return steps
 
 
@@ -302,7 +323,11 @@ def analyze(steps: list[AgentStep], *, offline: bool = False, resolve_hosts: boo
         combined["switch_note"] = ("some steps arrived unordered (concurrent calls "
                                    "without reliable ordering); switch claims withheld for them")
     # a worst-step LIKELY/CONFIRMED is alertable even without a switch
-    combined["alert"] = bool(switches) or combined["worst_step_verdict"] in ("LIKELY", "CONFIRMED")
+    findings = agent_behaviors.scan_steps(steps)
+    combined["concerning_behaviors"] = findings
+    combined["alert"] = (bool(switches)
+                         or combined["worst_step_verdict"] in ("LIKELY", "CONFIRMED")
+                         or bool(findings))
     return {"steps": rows, "verdict": combined}
 
 
