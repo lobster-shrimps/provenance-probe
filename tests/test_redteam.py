@@ -149,6 +149,11 @@ def test_one_scenario_error_does_not_abort():
 
 def _hermetic(case_id):
     case = next(c for c in redteam.HERMETIC_SWITCH_CASES if c["id"] == case_id)
+    if case.get("client_factory"):
+        client = case["client_factory"]()
+        out = redteam.run(client, cap=case["cap"])
+        out["_client"] = client
+        return out
     return redteam.run(redteam.ScriptedClient(case["turns"]), cap=len(case["turns"]))
 
 
@@ -179,3 +184,56 @@ def test_wire_envelope_flags_without_confirming():
     assert out["switch_detected"] is True
     assert out["confirmed_switch"] is False
     assert out["self_id_flags"] == []
+
+
+def test_live_measure_confirms_tokenizer_switch_without_attached_bundle():
+    # The scenario count moves with the prompt. The battery supplies the shape.
+    out = _hermetic("live_measure_tokenizer_switch")
+    client = out.pop("_client")
+    assert client.probe_calls >= 6
+    assert len(set(client.scenario_ptoks)) > 1       # one count is not the fingerprint
+    assert out["confirmed_switch"] is True
+    assert out["switches"] == []
+    assert out["self_id_flags"] == []
+    assert "probes" in out["confirmed_switches"][0]["detail"]
+
+
+def test_live_measure_same_tokenizer_is_wire_flag_not_confirmed():
+    out = _hermetic("live_measure_same_tokenizer")
+    out.pop("_client")
+    assert out["fingerprint_switch"] is True
+    assert out["switch_detected"] is True
+    assert out["confirmed_switch"] is False
+    assert "CONFIRMED" not in out["note"]
+
+
+def test_live_measure_self_id_does_not_upgrade():
+    out = _hermetic("live_measure_self_id")
+    client = out.pop("_client")
+    assert client.probe_calls >= 6
+    assert out["confirmed_switch"] is False
+    assert out["switch_detected"] is False
+    assert out["fingerprint_switch"] is False
+    assert out["self_id_flags"]
+
+
+def test_response_ok_property_is_not_a_transport_error():
+    # client.Response.ok is a property. A live reply must still be scored.
+    class _Prop:
+        ok = True
+        body = {"choices": [{"message": {}}], "usage": {"prompt_tokens": 4}}
+        status = 200
+        def echoed_model(self):
+            return "gemini"
+        def text(self):
+            return "I am Gemini."
+        def usage_prompt_tokens(self):
+            return 4
+
+    class _C:
+        def chat(self, prompt, **kw):
+            return _Prop()
+
+    out = redteam.run(_C(), cap=2)
+    assert out["scenarios_run"] == 2
+    assert out["confirmed_switch"] is False

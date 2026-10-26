@@ -166,8 +166,13 @@ def run_switch_cases():
     rows = []
     for case in redteam.HERMETIC_SWITCH_CASES:
         try:
-            out = redteam.run(redteam.ScriptedClient(case["turns"]),
-                              cap=len(case["turns"]))
+            if case.get("client_factory"):
+                client = case["client_factory"]()
+                cap = case["cap"]
+            else:
+                client = redteam.ScriptedClient(case["turns"])
+                cap = len(case["turns"])
+            out = redteam.run(client, cap=cap)
             problems = []
             for key, field in (
                 ("expect_confirmed", "confirmed_switch"),

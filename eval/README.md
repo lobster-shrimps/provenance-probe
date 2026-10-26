@@ -84,8 +84,11 @@ Not part of the Chinese-origin confusion matrix. No model call and no API key.
 | `zai_persona_denies_switch` | Persona stays Gemini and says it did not switch; the multi-probe tokenizer shape moves. `confirmed_switch` is true. |
 | `self_id_alone` | The confession changes and the tokenizer shape does not. Neither `switch_detected` nor `confirmed_switch`. |
 | `wire_envelope_only` | The response envelope changes and the tokenizer shape does not. `switch_detected` is true. `confirmed_switch` is false. |
+| `live_measure_tokenizer_switch` | No assess bundle. The live path runs the tokenizer battery. Persona stays Gemini and denies a switch. The measured shape moves. `confirmed_switch` is true. |
+| `live_measure_same_tokenizer` | The battery sees only a constant token-count offset (same shape). The wire envelope changes. `switch_detected` is true. `confirmed_switch` is false. |
+| `live_measure_self_id` | The battery shape stays put and the confession changes. Neither `switch_detected` nor `confirmed_switch`. |
 
-A live `redteam` reply carries one `usage.prompt_tokens` count. That count moves with the prompt, so it is not a tokenizer fingerprint. The denial case supplies the multi-probe vector an assess bundle would. A live corpus run still flags an echoed model-id change and a wire-envelope change; it does not confirm a tokenizer switch unless that vector is on the response.
+A scenario reply's single `usage.prompt_tokens` count moves with the prompt, so the live path does not hash it. It runs the tokenizer battery (`tokenizer.measure`) once per scenario and grades that multi-probe shape. A same-tokenizer swap is not reported as tokenizer-confirmed.
 
 ## The gate
 

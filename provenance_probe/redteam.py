@@ -50,46 +50,96 @@ def _identity(resp) -> dict:
     return {"model_id": model, "self_id": idy.get("conceded") or idy.get("asserted")}
 
 
-def _scenario_bundle(resp) -> dict:
+def _attached_tokenizer(resp) -> dict | None:
+    tok = getattr(resp, "tokenizer", None)
+    if isinstance(tok, dict) and tok.get("usable") and tok.get("vector"):
+        return {"usable": True, "vector": dict(tok["vector"])}
+    return None
+
+
+def _wants_live_measure(client) -> bool:
+    """True for a real endpoint client, or a hermetic stand-in that opts in.
+
+    Scripted fixtures that already carry a vector do not set this. One
+    ``usage.prompt_tokens`` integer is never promoted into a vector here.
+    """
+    flag = getattr(client, "collect_tokenizer", None)
+    if flag is False:
+        return False
+    if flag is True:
+        return True
+    from .client import Client
+    return isinstance(client, Client)
+
+
+def _collect_tokenizer(client, resp) -> dict | None:
+    """Multi-probe tokenizer vector for this scenario.
+
+    Prefer a vector already on the response (hermetic fixture or assess bundle).
+    Otherwise, on the live path, run the tokenizer battery through ``client``
+    and keep that vector. The scenario reply's own prompt-token count is not
+    copied in: it moves with the prompt.
+    """
+    attached = _attached_tokenizer(resp)
+    if attached is not None:
+        return attached
+    if not _wants_live_measure(client):
+        return None
+    try:
+        from .probes import tokenizer as tokmod
+        obs = tokmod.measure(client)
+    except Exception:
+        return None
+    vec = obs.get("vector") if isinstance(obs, dict) else None
+    if isinstance(obs, dict) and obs.get("usable") and isinstance(vec, dict) and len(vec) >= 6:
+        return {"usable": True, "vector": dict(vec)}
+    return None
+
+
+def _response_ok(resp) -> bool:
+    """``ok`` is a method on scripted replies and a property on ``client.Response``."""
+    ok = getattr(resp, "ok", True)
+    if callable(ok):
+        ok = ok()
+    return bool(ok)
+
+
+def _scenario_bundle(resp, tokenizer=None) -> dict:
     """What ``monitor.fingerprint`` / ``monitor.diff`` may grade for one reply.
 
     Wire half: prompt-invariant body key-set + error schema. Header keys are
     omitted — per-request headers jitter on a stable backend.
 
-    Tokenizer half: a multi-probe vector, when the caller attached one (an
-    assess bundle, or a hermetic fixture). One ``usage.prompt_tokens`` integer
-    is not that vector: it moves with the prompt, so it stays a usability gate
-    and is not hashed.
+    Tokenizer half: a multi-probe vector (attached, or measured on the live
+    path). One ``usage.prompt_tokens`` integer is not that vector: it moves
+    with the prompt, so it is not hashed.
     """
     body = getattr(resp, "body", None)
     bundle = {
         "errors": {"error_signature": _error_schema(body)},
         "streaming": {"chunk_fields": _body_shape(body)},
     }
-    tok = getattr(resp, "tokenizer", None)
+    tok = tokenizer if tokenizer is not None else _attached_tokenizer(resp)
     if isinstance(tok, dict) and tok.get("usable") and tok.get("vector"):
         bundle["tokenizer"] = {"usable": True, "vector": dict(tok["vector"])}
     return bundle
 
 
-def _scenario_fingerprint(resp) -> str | None:
+def _scenario_fingerprint(resp, tokenizer=None) -> str | None:
     """Backend fingerprint for one red-team response, via monitor.fingerprint.
 
-    The tokenizer-usability gate is the reported usage.prompt_tokens: if it is
-    suppressed (None) the tokenizer layer is unusable and this scenario is skipped
-    for fingerprint comparison (advisory, never a switch) — exactly the degraded
-    path monitor.diff already treats as "not a clean bill". The wire discriminator
-    is the PROMPT-INVARIANT response schema (the body's top-level key-set + the
-    error schema), so a stable backend answering different adversarial prompts
-    keeps a stable fingerprint, while a router that swaps the backend provider
-    (even while echoing a CONSTANT model_id — the z.ai shape) flips it when the
-    response shape moves. A multi-probe tokenizer vector on the response, when
-    present, is part of the same fingerprint: a shape move is what
+    Skipped only when there is no multi-probe vector and the scenario reply
+    also has no integer usage count (the degraded path monitor.diff already
+    treats as not a clean bill). The wire discriminator is the prompt-invariant
+    response schema, so a stable backend keeps a stable fingerprint while a
+    router that swaps providers (constant echoed model id) flips it when the
+    envelope moves. A shape move in the multi-probe vector is what
     ``monitor.diff`` grades CONFIRMED. Uses monitor.fingerprint unchanged."""
     ptoks = resp.usage_prompt_tokens() if hasattr(resp, "usage_prompt_tokens") else None
-    if not isinstance(ptoks, int):
-        return None                                  # tokenizer unusable → skip
-    return monitor.fingerprint(_scenario_bundle(resp))
+    bundle = _scenario_bundle(resp, tokenizer)
+    if not bundle.get("tokenizer") and not isinstance(ptoks, int):
+        return None
+    return monitor.fingerprint(bundle)
 
 
 def _error_schema(body) -> str:
@@ -113,8 +163,10 @@ def run(client, *, cap: int = 8, max_tokens: int = 64, scenarios=None) -> dict:
     reports a different id). It does not, by itself, set ``confirmed_switch``.
     A changing ``self_id`` is an advisory flag only — the corpus asks about
     "underlying" identity, so a refusal can trip the self-ID regex, and a
-    confession must not upgrade the grade. ``confirmed_switch`` is tokenizer-shape
+    confession must not upgrade the grade.     ``confirmed_switch`` is tokenizer-shape
     drift (``monitor.diff`` critical), including when the persona denies the switch.
+    On a live client the shape is measured here (the tokenizer battery). A
+    scenario reply's single prompt-token count is not that measurement.
     """
     corpus = (scenarios or SCENARIOS)[:max(0, cap)]
     rows, switches, self_id_flags, fp_switches, confirmed_switches = [], [], [], [], []
@@ -127,7 +179,7 @@ def run(client, *, cap: int = 8, max_tokens: int = 64, scenarios=None) -> dict:
         except Exception as e:                       # never let one scenario abort the run
             rows.append({"scenario": sid, "error": str(e)[:120]})
             continue
-        if hasattr(resp, "ok") and not resp.ok():     # transport error is NOT a clean scenario
+        if not _response_ok(resp):                    # transport error is NOT a clean scenario
             rows.append({"scenario": sid, "error": f"transport {getattr(resp, 'status', '?')}"})
             continue
         idy = _identity(resp)
@@ -142,12 +194,13 @@ def run(client, *, cap: int = 8, max_tokens: int = 64, scenarios=None) -> dict:
                 bucket.append({"scenario": sid, "signal": sig, "from": base[sig], "to": cur})
                 base[sig] = cur
         # Fingerprint switch: the wire envelope and/or tokenizer shape moved
-        # even if the echoed model_id was held constant. Skip scenarios whose
-        # usage gate says the tokenizer is unusable.
-        fp = _scenario_fingerprint(resp)
+        # even if the echoed model_id was held constant. A live client measures
+        # the multi-probe vector; a single scenario prompt_tokens count does not.
+        measured = _collect_tokenizer(client, resp)
+        fp = _scenario_fingerprint(resp, measured)
         if fp is None:
             continue
-        bundle = _scenario_bundle(resp)
+        bundle = _scenario_bundle(resp, measured)
         if base_fp is None:
             base_fp = fp                      # backfill first-seen (not a switch)
             base_bundle = bundle
@@ -197,9 +250,9 @@ def run(client, *, cap: int = 8, max_tokens: int = 64, scenarios=None) -> dict:
 
 
 # --- hermetic switch corpus (no model call, no API key) ---------------------
-# One usage.prompt_tokens count cannot be a tokenizer fingerprint: it moves with
-# the prompt. These fixtures carry the multi-probe vector an assess bundle would,
-# which is the capture a live red-team reply does not include by itself.
+# Attached-vector fixtures below stand in for an assess bundle. LiveMeasureClient
+# does not attach one: each scenario reply has a single prompt_tokens count that
+# moves with the prompt, and the tokenizer battery is what supplies the vector.
 
 _GEMINI_SHAPE = {"a": 10, "b": 12, "c": 14, "d": 16, "e": 18, "f": 20, "g": 22}
 # Not a constant offset of _GEMINI_SHAPE, so shape_vector disagrees.
@@ -270,6 +323,80 @@ _WIRE_ONLY_TURNS = [
 ]
 
 
+class _ProbeReply:
+    """One tokenizer-battery reply. The count is the probe's prompt_tokens."""
+
+    def __init__(self, n: int):
+        self.body = {"usage": {"prompt_tokens": n}}
+        self.status = 200
+
+    def usage_prompt_tokens(self):
+        return self.body["usage"]["prompt_tokens"]
+
+    def echoed_model(self):
+        return None
+
+    def text(self):
+        return ""
+
+    def ok(self):
+        return True
+
+
+class LiveMeasureClient:
+    """Hermetic stand-in for a live endpoint. No tokenizer bundle is attached.
+
+    ``tokenizer.measure`` sends the probe corpus (``max_tokens=1`` is not how we
+    tell them apart; the prompt text is). Scenario replies carry one
+    prompt_tokens count that changes with the prompt length. That count is not
+    the fingerprint.
+    """
+
+    def __init__(self, mode: str):
+        self.collect_tokenizer = True
+        self.mode = mode
+        self.scenarios = 0
+        self.probe_calls = 0
+        self.scenario_ptoks: list[int] = []
+        self.phase = "a"
+        from .probe_variants import variant_probes
+        self._probes = variant_probes(0)
+        self._by_text = {text: (i, pid) for i, (pid, text) in enumerate(self._probes)}
+
+    def _count(self, index: int) -> int:
+        base = 30 + index * 3
+        if self.phase == "b" and self.mode == "tokenizer_switch":
+            return 30 + (index * index) % 17 + (index % 3) * 11
+        if self.phase == "b" and self.mode == "same_tokenizer":
+            return base + 8                       # constant offset; same shape
+        return base
+
+    def chat(self, prompt, max_tokens=1, **kw):
+        hit = self._by_text.get(prompt)
+        if hit is not None:
+            self.probe_calls += 1
+            return _ProbeReply(self._count(hit[0]))
+        self.scenarios += 1
+        if self.scenarios >= 3:
+            self.phase = "b"
+        ptoks = 11 + (len(prompt) % 7)            # moves with the prompt
+        self.scenario_ptoks.append(ptoks)
+        if self.mode == "self_id":
+            text = "I am ChatGPT." if self.scenarios == 1 else "Actually I'm GLM."
+            return ScriptedTurn("router", text, ptoks=ptoks, body=_BODY)
+        body = _BODY_WIRE if self.mode == "same_tokenizer" and self.phase == "b" else _BODY
+        return ScriptedTurn("gemini", _DENIAL, ptoks=ptoks, body=body)
+
+
+def _live_case(mode: str, **fields) -> dict:
+    return {
+        "id": f"live_measure_{mode}",
+        "client_factory": (lambda m=mode: LiveMeasureClient(m)),
+        "cap": 4,
+        **fields,
+    }
+
+
 HERMETIC_SWITCH_CASES: list[dict] = [
     {
         "id": "zai_persona_denies_switch",
@@ -295,4 +422,25 @@ HERMETIC_SWITCH_CASES: list[dict] = [
         "expect_switch_detected": True,
         "note": "wire fingerprint flags a switch; it does not grade CONFIRMED",
     },
+    _live_case(
+        "tokenizer_switch",
+        expect_confirmed=True,
+        expect_fingerprint_switch=True,
+        expect_switch_detected=True,
+        note="live battery measures the shape; persona denies the switch; no assess bundle",
+    ),
+    _live_case(
+        "same_tokenizer",
+        expect_confirmed=False,
+        expect_fingerprint_switch=True,
+        expect_switch_detected=True,
+        note="same tokenizer (constant offset) is a wire flag, not a tokenizer confirmation",
+    ),
+    _live_case(
+        "self_id",
+        expect_confirmed=False,
+        expect_fingerprint_switch=False,
+        expect_switch_detected=False,
+        note="live-measured stable shape; a confession does not confirm or upgrade",
+    ),
 ]
