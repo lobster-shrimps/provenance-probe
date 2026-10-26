@@ -226,6 +226,7 @@ def api_run(rid):
         jv = (sc.get("jurisdictional_risk") or {}).get("verdict")
         if pv is not None or jv is not None:
             out["plain_answer"] = explain.plain_answer(pv, jv, sc.get("confidence"))
+            out["plain_action"] = explain.plain_action(pv, jv, sc.get("confidence"))
         # Backend fingerprint (same value /api/history exposes) so the client-side
         # watch can display the pinned baseline id without a second round-trip.
         out["fingerprint_id"] = b.get("fingerprint_id", "")
@@ -274,16 +275,18 @@ def api_monitor():
     # (same single-source call as the live probe + CLI, so no drift).
     from . import explain
     cur_score = cur.get("score") or {}
-    plain = explain.plain_answer(
-        (cur_score.get("provenance_risk") or {}).get("verdict"),
-        (cur_score.get("jurisdictional_risk") or {}).get("verdict"),
-        cur_score.get("confidence"))
+    pv = (cur_score.get("provenance_risk") or {}).get("verdict")
+    jv = (cur_score.get("jurisdictional_risk") or {}).get("verdict")
+    conf = cur_score.get("confidence")
+    plain = explain.plain_answer(pv, jv, conf)
+    action = explain.plain_action(pv, jv, conf)
     return jsonify({
         "drift_detected": result["drift_detected"],
         "changes": result["changes"],
         "confidence": result["confidence"],
         "confidence_note": result.get("confidence_note", ""),
         "plain_answer": plain,
+        "plain_action": action,
         "baseline": {"fingerprint_id": base.get("fingerprint_id", ""), "ts": base.get("timestamp")},
         "current": {"fingerprint_id": cur.get("fingerprint_id", ""), "ts": cur.get("timestamp")},
     })
@@ -1772,7 +1775,7 @@ PAGE = r"""<section style="margin-bottom:24px">
  &mdash; the mission running continuously, on endpoints you already recognise.</p>
 </a>
 
-<!-- How it works: the four-step flow, rendered from explain.FLOW_STAGES (single
+<!-- How it works: the flow, rendered from explain.FLOW_STAGES (single
      source, no script, accessible). Injected server-side at __FLOW__. -->
 <section aria-label="How it works">
 <p class="seclabel" style="margin:0 0 6px">How it works</p>
@@ -1946,10 +1949,10 @@ function render(d,rid){
  // Lead with the plain-English answer (server-computed in explain.plain_answer;
  // never assembled client-side, so the UI cannot drift from the CLI wording).
  if(d.plain_answer){h+='<p class="lead" aria-label="Plain-English answer" style="margin:0 0 14px">'+esc(d.plain_answer)+'</p>'}
+ if(d.plain_action){h+='<p aria-label="Next step" style="margin:0 0 14px">'+esc(d.plain_action)+'</p>'}
  h+='<div class="ban '+w.level+'"><div class=lvl>'+esc(w.level_label)+'</div>'+
   '<h2>'+esc(w.headline)+'</h2><ul>'+(w.facts||[]).map(f=>'<li>'+esc(f)+'</li>').join('')+
   '</ul></div>';
- h+='<div class=card><h3>What to do</h3><ul>'+(w.actions||[]).map(a=>'<li>'+esc(a)+'</li>').join('')+'</ul></div>';
  h+='<div class=card><h3>Technical verdict</h3><table><tr><th>Risk</th><th>Verdict</th><th>Likelihood</th></tr>'+
   '<tr><td>Jurisdictional (PRC operator/soil)</td><td class=mono>'+s.jurisdictional_risk.verdict+
   '</td><td class=mono>'+s.jurisdictional_risk.likelihood+'</td></tr>'+
@@ -2007,6 +2010,7 @@ function compare(){
    let h='';
    // Lead with the plain-English read of the current run (server-computed).
    if(d.plain_answer){h+='<p class="lead" aria-label="Plain-English answer" style="margin:0 0 12px">'+esc(d.plain_answer)+'</p>'}
+   if(d.plain_action){h+='<p aria-label="Next step" style="margin:0 0 12px">'+esc(d.plain_action)+'</p>'}
    h+='<div class="ban '+(drift?'red':'green')+'" style="margin:0 0 12px">'+
     '<div class=lvl>'+(drift?'DRIFT DETECTED':'NO DRIFT')+'</div><h2>'+
     (drift?(d.changes.length+' change'+(d.changes.length>1?'s':'')+' since baseline'):'Backend is stable')+'</h2>'+

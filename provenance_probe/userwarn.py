@@ -23,7 +23,7 @@ def build(bundle: dict) -> dict:
     jur = s.get("jurisdictional_risk", {}).get("likelihood", 0)
     prov = s.get("provenance_risk", {}).get("likelihood", 0)
 
-    facts, actions = [], []
+    facts = []
     level = "green"
 
     # --- the headline: was the user actively misled? -------------------------
@@ -78,31 +78,17 @@ def build(bundle: dict) -> dict:
         facts.append("Note: this app agrees with whatever you tell it. Asking it to confirm "
                      "which AI it uses will not give you a reliable answer.")
 
-    # --- actions -------------------------------------------------------------
-    if level == "red":
-        actions = [
-            "Stop putting sensitive information into this app.",
-            "Assume everything you have already typed has been seen by someone else.",
-            "Change any password, key, or credential you pasted into it.",
-            "Tell whoever manages IT or security where you work.",
-            "If you wanted a specific AI service, go to that company's own website directly "
-            "rather than a third-party app that claims to offer it.",
-        ]
-    elif level == "orange":
-        actions = [
-            "Do not put confidential work, personal, or client information into this app.",
-            "Check with your IT or security team before using it for anything work-related.",
-            "Consider a provider whose location and ownership you can verify.",
-        ]
-    elif level == "yellow":
-        actions = ["Avoid sensitive information until you can confirm who operates this service.",
-                   "Ask the provider directly which AI model they use and where it runs."]
-    else:
-        actions = ["No action needed based on this check.",
-                   "Re-check periodically — services can change their AI provider without notice."]
+    # The next step is one sentence from explain.plain_action. This warning
+    # does not keep a second checklist.
+    from . import explain
+    sc = s or {}
+    next_step = explain.plain_action(
+        (sc.get("provenance_risk") or {}).get("verdict") or "INDETERMINATE",
+        (sc.get("jurisdictional_risk") or {}).get("verdict") or "INDETERMINATE",
+        sc.get("confidence") or "low")
 
     return {"level": level, "level_label": LEVELS[level][0], "headline": headline,
-            "facts": facts, "actions": actions,
+            "facts": facts, "actions": [], "next_step": next_step,
             "app": bundle.get("target", {}).get("name", "this app"),
             "url": bundle.get("target", {}).get("base_url", "")}
 
@@ -111,8 +97,6 @@ def to_text(w: dict) -> str:
     L = [f"\n{'='*66}", f"  {w['headline'].upper()}", f"  {w['level_label']}", "="*66,
          "\n  WHAT WE FOUND"]
     L += [f"    - {f}" for f in w["facts"]]
-    L.append("\n  WHAT YOU SHOULD DO")
-    L += [f"    {i}. {a}" for i, a in enumerate(w["actions"], 1)]
     L.append("="*66)
     return "\n".join(L)
 
@@ -120,7 +104,9 @@ def to_text(w: dict) -> str:
 def to_html(w: dict, path: str) -> None:
     label, ink, bg, border = LEVELS[w["level"]]
     facts = "".join(f"<li>{html.escape(f)}</li>" for f in w["facts"])
-    acts = "".join(f"<li>{html.escape(a)}</li>" for a in w["actions"])
+    step = html.escape(w.get("next_step") or "")
+    step_block = (f'<p style="font-size:18px;margin:0 0 18px">{step}</p>'
+                  if step else "")
     doc = f"""<!doctype html><meta charset=utf-8><title>AI app safety check</title>
 <style>
 body{{font:17px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
@@ -140,10 +126,10 @@ ol{{margin:0;padding-left:22px}}
 .foot{{font-size:13px;color:#6b7280;margin-top:20px;line-height:1.5}}
 </style><div class=w>
 <div class=banner><div class=lvl>{html.escape(label)}</div>
+{step_block}
 <h1>{html.escape(w['headline'])}</h1>
 <div class=sub>Checked: {html.escape(w['app'])} &nbsp;·&nbsp; {html.escape(w['url'])}</div></div>
 <div class=card><h2>What we found</h2><ul>{facts}</ul></div>
-<div class=card><h2>What you should do</h2><ol>{acts}</ol></div>
 <div class=foot>This check looks at where your messages are actually sent and which AI model
 answers them — not at what the app says about itself. Apps can change their AI provider at any
 time without telling you, so a clean result today is not a permanent guarantee.</div>

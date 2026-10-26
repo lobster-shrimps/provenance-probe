@@ -53,6 +53,9 @@ def cmd_assess(a):
         print("\n" + explain.plain_answer(
             sc["provenance_risk"]["verdict"], sc["jurisdictional_risk"]["verdict"],
             sc["confidence"]))
+        print(explain.plain_action(
+            sc["provenance_risk"]["verdict"], sc["jurisdictional_risk"]["verdict"],
+            sc["confidence"]))
         print("\n" + report.console(b))
         if b.get("deception", {}).get("correlation", {}).get("finding"):
             print("  DECEPTION: " + b["deception"]["correlation"]["finding"])
@@ -431,6 +434,8 @@ def cmd_redteam(a):
         _assert_scope(t, a.i_am_authorized)
         print(f"\n>>> red-team {t.name}  {t.base_url}  (cap {a.cap})")
         result = redteam.run(Client(t), cap=a.cap)
+        from . import explain
+        print("\n" + explain.plain_action_for_switch(result))
         for row in result["identities"]:
             if "error" in row:
                 print(f"  {row['scenario']:<16} error: {row['error']}")
@@ -1506,7 +1511,7 @@ def main(argv=None):
     s = sub.add_parser("explain",
                        help="print the plain-language how-it-works flow (no network)")
     s.add_argument("--flow", action="store_true",
-                   help="print the four-step how-it-works flow as plain text")
+                   help="print the how-it-works flow as plain text")
     s.set_defaults(func=cmd_explain)
 
     a = p.parse_args(argv)

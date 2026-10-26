@@ -87,6 +87,14 @@ def to_html(bundle: dict, path: str) -> None:
     # meaning if no user warning was attached to this bundle.
     fact = uw.get("headline") or lead.get("meaning", "")
     stamp_label = e(uw.get("level_label") or "Assessment complete")
+    pv = s["provenance_risk"].get("verdict")
+    jv = s["jurisdictional_risk"].get("verdict")
+    conf_raw = s.get("confidence") or ""
+    plain = explain.plain_answer(pv, jv, conf_raw)
+    step = explain.plain_action(pv, jv, conf_raw)
+    lead_copy = (
+        f'<p class="lead" aria-label="Plain-English answer" style="max-width:52ch;margin:0 0 10px">{e(plain)}</p>'
+        f'<p aria-label="Next step" style="max-width:52ch;margin:0 0 16px">{e(step)}</p>')
 
     # 1. Tokenizer match — terminal-green mono table on the dark evidence card.
     tm = bundle.get("tokenizer_match") or []
@@ -182,6 +190,7 @@ def to_html(bundle: dict, path: str) -> None:
     inner = f"""<div class="hero-row">
 <div style="flex:1;min-width:260px">
 <div class="seclabel" style="margin-top:0">Result</div>
+{lead_copy}
 <h1 class="display" style="font-size:clamp(38px,6vw,64px);color:{accent};margin:6px 0 14px">{head_html}</h1>
 <p class="lead" style="max-width:52ch;margin:0">{e(fact)}</p>
 </div>

@@ -133,6 +133,40 @@ def test_plain_answer_accepts_the_raw_conf_string():
 
 
 @pytest.mark.unit
+def test_plain_action_is_one_plain_next_step():
+    for p, j, c in _grid():
+        s1 = explain.plain_action(p, j, c)
+        s2 = explain.plain_action(p, j, c)
+        assert s1 == s2 and s1.endswith(".")
+        assert len(s1) <= 200
+        assert ". " not in s1
+        low = s1.lower()
+        for term in BANNED_JARGON:
+            assert term not in low
+
+
+def test_plain_action_follows_severity_and_confidence():
+    assert explain.plain_action("CONFIRMED", "NO EVIDENCE", "high").startswith("Stop sending")
+    assert explain.plain_action("NO EVIDENCE", "LIKELY", "moderate").startswith("Stop sending")
+    assert explain.plain_action("CONFIRMED", "UNLIKELY", "low").startswith("Do not act on this alone")
+    assert explain.plain_action("INDETERMINATE", "UNLIKELY", "high").startswith("Do not treat this as safe")
+    assert explain.plain_action("UNLIKELY", "NO EVIDENCE", "high").startswith("No change is needed")
+
+
+def test_plain_action_for_switch_reuses_the_same_sentence():
+    # Red-team has no second copy. Confirmed, wire-only, and quiet map onto
+    # the three plain_action sentences.
+    confirmed = explain.plain_action_for_switch(
+        {"confirmed_switch": True, "switch_detected": True})
+    flagged = explain.plain_action_for_switch({"switch_detected": True})
+    quiet = explain.plain_action_for_switch(
+        {"switch_detected": False, "self_id_changed": True})
+    assert confirmed == explain.plain_action("CONFIRMED", "NO EVIDENCE", "high")
+    assert flagged == explain.plain_action("LIKELY", "NO EVIDENCE", "low")
+    assert quiet == explain.plain_action("UNLIKELY", "NO EVIDENCE", "high")
+    assert len({confirmed, flagged, quiet}) == 3
+
+
 def test_plain_answer_positive_provenance_is_honest_not_deceptive():
     # Pure-tuple honesty: it asserts origin, NOT misrepresentation. No "not what it
     # claims" framing (that needs a persona-mismatch signal not in the tuple).
@@ -266,6 +300,10 @@ def test_no_plain_answer_or_flow_copy_is_hardcoded_in_serve_or_cli():
         "not an accusation",
         "the kind of model it claims",
         "under PRC jurisdiction (Chinese data law can apply)",
+        "Stop sending sensitive data through this app",
+        "Do not act on this alone",
+        "Do not treat this as safe",
+        "No change is needed",
     ]
     # ...plus every FLOW_STAGES stage title and every plain layer flow label.
     forbidden += [stage.title for stage in explain.FLOW_STAGES]

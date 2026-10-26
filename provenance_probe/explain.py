@@ -297,7 +297,7 @@ class Stage(NamedTuple):
     detail: str = ""          # "" | "layers" | "axes"
 
 
-# The pipeline as four plain-English steps — the SINGLE source for both the visual
+# The pipeline as plain-English steps — the SINGLE source for both the visual
 # :func:`flow_html` (landing + /help) and the plain-text :func:`flow_text`
 # (``explain --flow``). Step 2 enumerates the LAYERS; step 3 the two VERDICT axes;
 # neither copies their wording (it is pulled from LAYERS / VERDICTS at render time).
@@ -314,6 +314,9 @@ FLOW_STAGES: "tuple[Stage, ...]" = (
     Stage("You get a verdict, a confidence, and what it means",
           "Each question gets one of five plain verdicts and a confidence level, "
           "led by a single plain-English sentence telling you what it means for you."),
+    Stage("You get one next step",
+          "The same result ends with one plain instruction: leave it, check again, "
+          "or stop sending sensitive data until a person who owns the risk reviews it."),
 )
 
 
@@ -405,6 +408,44 @@ def plain_answer(provenance_verdict: str, jurisdiction_verdict: str,
     ordered = sorted((prov, jur), key=lambda c: c[2])
     sentence = "; ".join(clause for _, clause, _ in ordered)
     return sentence[:1].upper() + sentence[1:] + "."
+
+
+def plain_action(provenance_verdict: str, jurisdiction_verdict: str,
+                 confidence: str) -> str:
+    """One plain next step for the same tuple ``plain_answer`` reads.
+
+    A pure function, so the CLI and the local UI cannot drift. It does not
+    repeat the two verdicts. Confidence decides whether a serious read is
+    strong enough to act on.
+    """
+    bucket = _conf_bucket(confidence)
+    positive = provenance_verdict in ("CONFIRMED", "LIKELY") or jurisdiction_verdict in ("CONFIRMED", "LIKELY")
+    unknown = provenance_verdict == "INDETERMINATE" or jurisdiction_verdict == "INDETERMINATE"
+    if positive and bucket == "low":
+        return ("Do not act on this alone; run the check again or ask the person "
+                "who owns the risk to review the detail.")
+    if positive:
+        return ("Stop sending sensitive data through this app until the person "
+                "who owns the risk reviews it.")
+    if unknown:
+        return ("Do not treat this as safe; run the check again once more of the "
+                "optional fields are filled in.")
+    return ("No change is needed; keep this result and run the check again if "
+            "the app is updated.")
+
+
+def plain_action_for_switch(result: dict) -> str:
+    """The one next-step sentence for a red-team result.
+
+    A confirmed tokenizer-shape move uses the serious step. A wire or echoed-id
+    flag is not strong enough to act on alone. A self-ID change is not a switch,
+    so it gets the quiet step. Every sentence is ``plain_action``.
+    """
+    if result.get("confirmed_switch"):
+        return plain_action("CONFIRMED", "NO EVIDENCE", "high")
+    if result.get("switch_detected"):
+        return plain_action("LIKELY", "NO EVIDENCE", "low")
+    return plain_action("UNLIKELY", "NO EVIDENCE", "high")
 
 
 # --------------------------------------------------------------- /help render ---
@@ -520,7 +561,7 @@ def help_html() -> str:
         'endpoint and tells you two things in plain language: whose model is really '
         'answering, and who is running it. Here is what every part does — no jargon.</p>'
 
-        # The visual pipeline first: four plain-English steps (single source:
+        # The visual pipeline first: the plain-English steps (single source:
         # FLOW_STAGES + LAYERS / VERDICTS), so a newcomer sees the shape before the prose.
         '<h2 style="margin-top:26px">How it works, step by step</h2>'
         + flow_html()
