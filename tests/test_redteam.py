@@ -39,6 +39,8 @@ def test_switch_under_stress_detected():
     assert out["switch_detected"] is True
     hops = {(s["signal"], s["from"], s["to"]) for s in out["switches"]}
     assert ("model_id", "gpt-4o", "glm-4") in hops
+    # echoed id is not a tokenizer fingerprint, so it does not confirm
+    assert out["confirmed_switch"] is False
 
 
 def test_cap_bounds_volume():
@@ -60,6 +62,7 @@ def test_self_id_change_is_advisory_not_hard_switch():
     c = _Client([("gpt-4o", "I am ChatGPT."), ("gpt-4o", "Actually I'm GLM.")] + [("gpt-4o", "x")] * 6)
     out = redteam.run(c, cap=8)
     assert out["switch_detected"] is False                 # NOT a hard switch (exit 0)
+    assert out["confirmed_switch"] is False                # a confession cannot upgrade
     assert out["self_id_flags"]                            # but flagged for review
 
 
@@ -99,7 +102,8 @@ class _FpClient:
 
 def test_fingerprint_switch_fires_on_constant_model_id():
     # model_id is the CONSTANT fake "gemini" throughout; the backend envelope
-    # changes on scenario 3 (different provider response shape) -> HARD switch.
+    # changes on scenario 3 (different provider response shape) -> switch flag.
+    # No tokenizer vector, so this is a wire flag, not a CONFIRMED switch.
     stable = _FpResp("gemini", "I am Gemini.", headers={"content-type": "application/json"},
                      body={"choices": [{"message": {}}], "usage": {}})
     swapped = _FpResp("gemini", "I am Gemini.",
@@ -110,6 +114,7 @@ def test_fingerprint_switch_fires_on_constant_model_id():
     assert out["fingerprint_switch"] is True
     assert out["fingerprint_switches"]                       # scenario id(s) listed
     assert out["switch_detected"] is True                    # folded into the hard signal
+    assert out["confirmed_switch"] is False                  # wire does not confirm
     # the echoed model id never changed -> model_id switches empty
     assert out["switches"] == []
 
@@ -140,3 +145,37 @@ def test_one_scenario_error_does_not_abort():
     out = redteam.run(_Boom([]), cap=4)
     assert any("error" in r for r in out["identities"])   # the failure is recorded
     assert out["switch_detected"] is False                # and the run continued
+
+
+def _hermetic(case_id):
+    case = next(c for c in redteam.HERMETIC_SWITCH_CASES if c["id"] == case_id)
+    return redteam.run(redteam.ScriptedClient(case["turns"]), cap=len(case["turns"]))
+
+
+def test_zai_denial_tokenizer_drift_is_confirmed_switch():
+    # Persona and echoed id stay Gemini and the text denies a switch. The
+    # multi-probe tokenizer shape still moves, so the grade is CONFIRMED.
+    out = _hermetic("zai_persona_denies_switch")
+    assert out["confirmed_switch"] is True
+    assert out["switch_detected"] is True
+    assert out["fingerprint_switch"] is True
+    assert out["switches"] == []                  # echoed model id never moved
+    assert out["self_id_flags"] == []             # the denial is not a new confession
+    assert out["confirmed_switches"]
+    assert "CONFIRMED" in out["note"]
+
+
+def test_self_id_alone_does_not_upgrade_with_stable_tokenizer():
+    out = _hermetic("self_id_alone")
+    assert out["confirmed_switch"] is False
+    assert out["switch_detected"] is False
+    assert out["fingerprint_switch"] is False
+    assert out["self_id_flags"]                  # supporting only
+
+
+def test_wire_envelope_flags_without_confirming():
+    out = _hermetic("wire_envelope_only")
+    assert out["fingerprint_switch"] is True
+    assert out["switch_detected"] is True
+    assert out["confirmed_switch"] is False
+    assert out["self_id_flags"] == []

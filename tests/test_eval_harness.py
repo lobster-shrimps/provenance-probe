@@ -112,6 +112,14 @@ def test_suppressed_usage_floors_to_indeterminate():
     assert r.got_flagged is False
 
 
+def test_switch_tier_matches_hermetic_labels():
+    from provenance_probe import redteam
+    rows = run_eval.run_switch_cases()
+    assert {r["id"] for r in rows} == {c["id"] for c in redteam.HERMETIC_SWITCH_CASES}
+    for row in rows:
+        assert row["ok"], f"{row['id']}: {row['detail']}"
+
+
 # --- mock determinism + per-family regex ------------------------------------
 
 @pytest.mark.skipif(

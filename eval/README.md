@@ -74,6 +74,19 @@ dict lookup, no gguf or network. Cases are the guardrail-5 adversarial inputs:
 adverse output (origin starts with `PRC`), mirroring `is_flagged_cn()` for the
 fingerprint tiers.
 
+### Switch tier — `redteam.HERMETIC_SWITCH_CASES`
+
+Runs with the bundle tier (`python -m eval.run_eval`, including `--bundles-only`).
+Not part of the Chinese-origin confusion matrix. No model call and no API key.
+
+| case | what it holds |
+|---|---|
+| `zai_persona_denies_switch` | Persona stays Gemini and says it did not switch; the multi-probe tokenizer shape moves. `confirmed_switch` is true. |
+| `self_id_alone` | The confession changes and the tokenizer shape does not. Neither `switch_detected` nor `confirmed_switch`. |
+| `wire_envelope_only` | The response envelope changes and the tokenizer shape does not. `switch_detected` is true. `confirmed_switch` is false. |
+
+A live `redteam` reply carries one `usage.prompt_tokens` count. That count moves with the prompt, so it is not a tokenizer fingerprint. The denial case supplies the multi-probe vector an assess bundle would. A live corpus run still flags an echoed model-id change and a wire-envelope change; it does not confirm a tokenizer switch unless that vector is on the response.
+
 ## The gate
 
 Defined in `run_eval.py:gate`. The build goes red on any of:

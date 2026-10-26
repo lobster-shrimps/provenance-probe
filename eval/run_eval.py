@@ -154,6 +154,35 @@ def run_vocab_cases():
     return results
 
 
+def run_switch_cases():
+    """Hermetic red-team switch grade. Not part of the CN confusion matrix.
+
+    A CONFIRMED switch is tokenizer-shape drift. The z.ai denial case keeps the
+    persona and echoed model id on Gemini while the shape moves. A self-ID change
+    with a stable shape must not confirm. A wire-envelope change flags and does
+    not confirm. No model call.
+    """
+    from provenance_probe import redteam
+    rows = []
+    for case in redteam.HERMETIC_SWITCH_CASES:
+        try:
+            out = redteam.run(redteam.ScriptedClient(case["turns"]),
+                              cap=len(case["turns"]))
+            problems = []
+            for key, field in (
+                ("expect_confirmed", "confirmed_switch"),
+                ("expect_fingerprint_switch", "fingerprint_switch"),
+                ("expect_switch_detected", "switch_detected"),
+            ):
+                if out[field] is not case[key]:
+                    problems.append(f"{field}={out[field]!r} expected {case[key]!r}")
+            rows.append({"id": case["id"], "ok": not problems,
+                         "detail": "; ".join(problems), "note": case.get("note", "")})
+        except Exception as e:  # noqa: BLE001 — a broken fixture is a harness error
+            rows.append({"id": case["id"], "ok": False, "detail": str(e), "note": ""})
+    return rows
+
+
 # --- fleet control tier: host attribution zero-FP gate ----------------------
 
 def run_fleet_cases():
@@ -232,10 +261,13 @@ def main(argv=None):
 
     from eval.corpus import MAX_FALSE_NEGATIVES
     # Pick tiers: an --X-only flag restricts to that tier; otherwise run all three.
+    # The switch tier is offline (no vocab) and rides with the bundle tier.
     only = a.bundles_only or a.vocab_only or a.fleet_only
     results = []
+    switch_rows = []
     if a.bundles_only or not only:
         results += run_bundle_cases()
+        switch_rows = run_switch_cases()
     if a.vocab_only or not only:
         results += run_vocab_cases()
     if a.fleet_only or not only:
@@ -243,15 +275,26 @@ def main(argv=None):
 
     matrix = confusion(results)
     reasons = gate(results, matrix, MAX_FALSE_NEGATIVES)
+    for row in switch_rows:
+        if not row["ok"]:
+            reasons.append(f"switch-case {row['id']}: {row['detail'] or 'failed'}")
     passed = not reasons
 
     if a.json:
         print(json.dumps({"matrix": matrix, "passed": passed, "reasons": reasons,
+                          "switch_cases": switch_rows,
                           "cases": [{"name": r.name, "cell": r.cell,
                                      "verdict": r.verdict, "verdict_ok": r.verdict_ok,
                                      "error": r.error} for r in results]}, indent=2))
     else:
         print(report(results, matrix))
+        if switch_rows:
+            print("-" * 68)
+            print("  SWITCH TIER (tokenizer fingerprint; not in the CN matrix)")
+            for row in switch_rows:
+                mark = "ok " if row["ok"] else "!! "
+                print(f"  {mark}{row['id']}: {row['note']}"
+                      + (f"  [{row['detail']}]" if row["detail"] else ""))
         print("-" * 68)
         if passed:
             print("  GATE: PASS — 0 false positives, all verdicts as labeled")

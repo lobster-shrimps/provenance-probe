@@ -443,6 +443,9 @@ def cmd_redteam(a):
             for s in result.get("fingerprint_switches", []):
                 print(f"    [{s['scenario']}] backend fingerprint: {s['from']} -> {s['to']} "
                       f"(echoed model id held constant)")
+            for s in result.get("confirmed_switches", []):
+                print(f"    [{s['scenario']}] CONFIRMED tokenizer fingerprint "
+                      f"(persona is not the authority): {s.get('detail', '')}")
             rc = 2
         print(f"\n  {result['note']} ({result['scenarios_run']} scenarios)")
         if a.out:
