@@ -891,6 +891,15 @@ def cmd_fleet_scan(a):
     from .fleet import run_scan
     from .fleet.render import render_console, to_json
 
+    if getattr(a, "dns_log", None) and (
+            getattr(a, "print", None) or getattr(a, "rollup", None)
+            or getattr(a, "egress", False) or getattr(a, "ja3", False)
+            or getattr(a, "trust_store", False)):
+        print("fleet-scan: --dns-log joins an offline log into the config scan. "
+              "It does not combine with --print, --rollup, --egress, --ja3, or "
+              "--trust-store.", file=_sys.stderr)
+        return 1
+
     # --fail-on / --fail-on-exposure gate the rollup ONLY; using either without
     # --rollup (e.g. with --print) is an argparse error (exit 2). Resolve the effective
     # mode: an explicit --fail-on always wins; --fail-on-exposure is an alias for `any`.
@@ -1092,7 +1101,25 @@ def cmd_fleet_scan(a):
               "endpoint reads as drift.", file=_sys.stderr)
 
     # home-relative sources so a username never leaks (redaction guardrail).
-    result = run_scan(allowlist_text, home="~")
+    dns_log_text = None
+    if getattr(a, "dns_log", None):
+        try:
+            with open(_os.path.expanduser(a.dns_log), encoding="utf-8", errors="replace") as fh:
+                dns_log_text = fh.read()
+        except OSError as e:
+            print(f"fleet-scan --dns-log: unreadable log is not a clean bill ({e})",
+                  file=_sys.stderr)
+            return 3
+        if not dns_log_text.strip():
+            print("fleet-scan --dns-log: empty log is not a clean bill",
+                  file=_sys.stderr)
+            return 3
+    from .fleet.dnslog import LogUnavailable
+    try:
+        result = run_scan(allowlist_text, home="~", dns_log_text=dns_log_text)
+    except LogUnavailable as e:
+        print(f"fleet-scan --dns-log: {e} (not a clean bill)", file=_sys.stderr)
+        return 3
     redact = not a.no_redact
 
     # Stamp the report with this machine's id + scan time so a directory-of-JSON
@@ -1451,6 +1478,11 @@ def main(argv=None):
                             "gateways to their real upstream, and report allowlist drift")
     s.add_argument("--allowlist", help="path to the operator allowlist (one host per line; "
                                        "# comments ok). Without it, everything reads as drift.")
+    s.add_argument("--dns-log",
+                   help="offline DNS, SNI, or proxy log (Zeek #fields or CSV). "
+                        "Joined to the corpus and allowlist. No network. An empty "
+                        "or unreadable file is not a clean result (exit 3). A row "
+                        "that only names a non-loopback gateway stays unresolved.")
     s.add_argument("--json", action="store_true",
                    help="emit the report as JSON (for --rollup, an alias for "
                         "--format json)")

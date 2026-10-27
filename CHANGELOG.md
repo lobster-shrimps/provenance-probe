@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+- **Offline DNS / SNI / proxy-log join.** `fleet-scan --dns-log` classifies
+  destination hosts in a Zeek `#fields` log or a CSV against the corpus and the
+  allowlist. No socket and no DNS lookup. A row that only names a non-loopback
+  gateway stays `gateway-upstream-unresolved`. An empty or unreadable file
+  exits 3 (not a clean bill).
+
 - **Concerning agent behavior (Cohere, 2026-10-26).** `agent.analyze` and
   `agent-trace` scan a captured trace for the Qwen tool artifacts in
   [Cohere's post](https://cohere.com/blog/concerning-behaviour-popular-open-weight-ai-model):

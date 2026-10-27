@@ -43,6 +43,25 @@ of a posture, not the subject of a dragnet.
    - A localhost gateway whose config can't be read is surfaced honestly as
      `gateway-upstream-unresolved` (needs an active probe), never as clean.
 
+## Offline DNS / SNI / proxy log
+
+Config files and a one-moment socket table miss traffic the network already
+logged. `fleet-scan --dns-log` reads a Zeek `#fields` log or a CSV (a `query`,
+`server_name` / `sni`, or `host` column) and classifies each destination with
+the same corpus match and allowlist. It does not open a socket and does not
+resolve DNS.
+
+```sh
+provenance-probe fleet-scan --allowlist allow.txt --dns-log ssl.log
+```
+
+A row that only names a non-loopback gateway (`gateway`, `proxy`, or `via`, or
+a host whose DNS label is `ai-gateway` or `llm-gateway`) stays
+`gateway-upstream-unresolved`. Putting that gateway on the allowlist does not
+turn the row into a sanctioned upstream: the log never named one, and this
+import does not read the gateway's config. An empty or unreadable file exits 3.
+That is not a clean holding line.
+
 ## The KPI: allowlist-holding, not a rogue list
 
 The report headline is the posture's health, not an accusation:

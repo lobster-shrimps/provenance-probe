@@ -105,6 +105,7 @@ def run_scan(
     environ: dict[str, str] | None = None,
     read_text: Callable[[str], str | None] | None = None,
     gateway_config_loader: Callable[[str], object | None] | None = None,
+    dns_log_text: str | None = None,
 ) -> ScanResult:
     """Run a read-only, no-egress fleet scan and return a private ScanResult.
 
@@ -150,6 +151,10 @@ def run_scan(
                 evidence_tier=f.evidence_tier, classification=cls, via_gateway=gw,
                 attribution=attr,
                 notes=f.notes + [f"resolved through {gw} gateway at {f.base_url}"] + notes))
+
+    if dns_log_text is not None:
+        from .dnslog import join_log
+        out.extend(join_log(dns_log_text, allowlist))
 
     sanctioned = sum(1 for f in out if f.classification == SANCTIONED)
     unresolved = sum(1 for f in out if f.classification in
