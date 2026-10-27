@@ -7,7 +7,7 @@ process connected to a known local-gateway port (OmniRoute/LiteLLM) is a client
 using one. That is the `observed` evidence tier — stronger than `configured`.
 
 Deliberate no-egress scope (see docs/fleet-posture.md): this reads the connection
-table (`lsof -n`, no DNS) and never makes a network call. Two Tier-2 signals are
+table (`lsof -nP -R`, no DNS) and never makes a network call. Two Tier-2 signals are
 therefore OUT of scope here and stay deferred:
   * IP→operator attribution — a snapshot yields upstream IPs, and resolving an IP
     to a PRC operator needs reverse-DNS/RDAP (egress) — that is the prober's
@@ -40,9 +40,11 @@ _GATEWAY_PORTS = {port for _h, port in KNOWN_LOCAL_GATEWAYS.values()}
 # reads as a router fan-out rather than incidental.
 DEFAULT_MIN_UPSTREAMS = 8
 
-# cmd + pid at the start; the `addr-pair (STATE)` at the end of an lsof -nP line.
+# cmd + pid at the start; an optional PPID (`lsof -R`) when the next token is
+# digits; the `addr-pair (STATE)` at the end of an lsof -nP line.
 _CONN = re.compile(
-    r"^(?P<cmd>\S+)\s+(?P<pid>\d+)\b.*\s(?P<name>\S+->\S+|\S+)\s+\((?P<state>[A-Z]+)\)\s*$")
+    r"^(?P<cmd>\S+)\s+(?P<pid>\d+)(?:\s+(?P<ppid>\d+))?"
+    r"\b.*\s(?P<name>\S+->\S+|\S+)\s+\((?P<state>[A-Z]+)\)\s*$")
 
 # Classifications
 ROUTER_FANOUT = "router-fanout"          # a loopback listener fanning out to many upstreams
@@ -63,6 +65,7 @@ class Conn:
     raddr_host: str          # "" for a LISTEN line
     raddr_port: int | None
     state: str
+    ppid: str = ""
 
 
 @dataclass(frozen=True)
@@ -131,7 +134,8 @@ def parse_lsof(text: str) -> list[Conn]:
         else:
             lh, lp = _split_addr(name)
             rh, rp = "", None
-        conns.append(Conn(m.group("cmd"), m.group("pid"), lh, lp, rh, rp, state))
+        conns.append(Conn(m.group("cmd"), m.group("pid"), lh, lp, rh, rp, state,
+                          m.group("ppid") or ""))
     return conns
 
 
@@ -179,31 +183,103 @@ def parse_netstat(text: str, names: dict[str, str] | None = None) -> list[Conn]:
     return conns
 
 
+def _find(parent: dict, key: tuple[str, str]) -> tuple[str, str]:
+    parent.setdefault(key, key)
+    while parent[key] != key:
+        parent[key] = parent[parent[key]]
+        key = parent[key]
+    return key
+
+
+def _union(parent: dict, a: tuple[str, str], b: tuple[str, str]) -> None:
+    ra, rb = _find(parent, a), _find(parent, b)
+    if ra != rb:
+        parent[rb] = ra
+
+
+def _router_groups(conns: list[Conn]) -> list[dict]:
+    """One group per pre-fork router.
+
+    A listening master and its workers are the same fan-out. Workers join the
+    listener when they share its listen port, or when `lsof -R` says their
+    parent pid is that listener. A different program, or the same command with
+    a different parent and a different port, stays separate.
+    """
+    listens: dict[tuple[str, str], set[int]] = {}
+    upstreams: dict[tuple[str, str], set[str]] = {}
+    ppid_of: dict[tuple[str, str], str] = {}
+    for c in conns:
+        key = (c.command, c.pid)
+        if c.ppid:
+            ppid_of[key] = c.ppid
+        if c.state == "LISTEN" and c.laddr_host in _LISTEN_ROUTER_HOSTS and c.laddr_port:
+            listens.setdefault(key, set()).add(c.laddr_port)
+        if c.state == "ESTABLISHED" and c.raddr_host and c.raddr_host not in _LOOPBACK:
+            upstreams.setdefault(key, set()).add(c.raddr_host)
+
+    parent: dict[tuple[str, str], tuple[str, str]] = {}
+    by_port: dict[tuple[str, int], list[tuple[str, str]]] = {}
+    for key, ports in listens.items():
+        cmd, _pid = key
+        for port in ports:
+            by_port.setdefault((cmd, port), []).append(key)
+    for keys in by_port.values():
+        for other in keys[1:]:
+            _union(parent, keys[0], other)
+    for key, ppid in ppid_of.items():
+        cmd, _pid = key
+        parent_key = (cmd, ppid)
+        if parent_key in listens:
+            _union(parent, key, parent_key)
+
+    groups: dict[tuple[str, str], dict] = {}
+    for key, ports in listens.items():
+        root = _find(parent, key)
+        group = groups.setdefault(root, {
+            "cmd": key[0], "ports": set(), "pids": set(), "hosts": set()})
+        group["ports"] |= ports
+        group["pids"].add(key[1])
+        group["hosts"] |= upstreams.get(key, set())
+    for key, hosts in upstreams.items():
+        if key not in parent:
+            continue
+        root = _find(parent, key)
+        group = groups.get(root)
+        if group is None:
+            continue
+        group["pids"].add(key[1])
+        group["hosts"] |= hosts
+    return list(groups.values())
+
+
+def _listener_pid(group: dict, ppid_of: dict[tuple[str, str], str]) -> str:
+    """The pid to name on the finding: the listener that is not a child of the group."""
+    cmd = group["cmd"]
+    pids = group["pids"]
+    roots = [pid for pid in pids if ppid_of.get((cmd, pid), "") not in pids]
+    return min(roots or pids, key=int)
+
+
 def analyze(conns: list[Conn], *, min_upstreams: int = DEFAULT_MIN_UPSTREAMS,
             privileged: bool = True) -> EgressResult:
     """Derive the loopback/wildcard fan-out + routed-via-gateway findings."""
     findings: list[EgressFinding] = []
 
-    # 1. Router fan-out: a process LISTENing on a loopback OR wildcard port with
-    #    many distinct non-loopback upstream hosts (the gateway itself).
-    listens_router: dict[tuple[str, str], set[int]] = {}
-    upstreams: dict[tuple[str, str], set[str]] = {}
-    for c in conns:
-        key = (c.command, c.pid)
-        if c.state == "LISTEN" and c.laddr_host in _LISTEN_ROUTER_HOSTS:
-            listens_router.setdefault(key, set()).add(c.laddr_port or 0)
-        if c.state == "ESTABLISHED" and c.raddr_host and c.raddr_host not in _LOOPBACK:
-            upstreams.setdefault(key, set()).add(c.raddr_host)
-    for key, ports in listens_router.items():
-        n = len(upstreams.get(key, set()))
-        if n >= min_upstreams:
-            cmd, pid = key
-            findings.append(EgressFinding(
-                ROUTER_FANOUT, cmd, pid,
-                f"listener on {sorted(ports)} fans out to {n} distinct upstream hosts",
-                upstreams=n,
-                notes=["router shape regardless of name; upstream IPs need an active "
-                       "probe to attribute (no-egress collector)"]))
+    # 1. Router fan-out. Pre-fork workers count toward the listener.
+    ppid_of = {(c.command, c.pid): c.ppid for c in conns if c.ppid}
+    for group in _router_groups(conns):
+        n = len(group["hosts"])
+        if n < min_upstreams:
+            continue
+        pid = _listener_pid(group, ppid_of)
+        ports = sorted(group["ports"])
+        detail = f"listener on {ports} fans out to {n} distinct upstream hosts"
+        if len(group["pids"]) > 1:
+            detail += f" across {len(group['pids'])} processes"
+        findings.append(EgressFinding(
+            ROUTER_FANOUT, group["cmd"], pid, detail, upstreams=n,
+            notes=["router shape regardless of name; upstream IPs need an active "
+                   "probe to attribute (no-egress collector)"]))
 
     # 2. Routed-via-gateway: any process connected to a known local-gateway port.
     #    Port 20128 is safely-unusual (OmniRoute); 4000 is a common dev port, so
@@ -242,7 +318,7 @@ def default_connections() -> list[Conn]:
             f"observed-egress scan is not implemented on {system}")
     try:
         out = subprocess.run(
-            ["lsof", "-nP", "-iTCP", "-sTCP:ESTABLISHED,LISTEN"],
+            ["lsof", "-nP", "-R", "-iTCP", "-sTCP:ESTABLISHED,LISTEN"],
             capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.SubprocessError) as e:
         raise EgressUnavailable(f"could not run `lsof` to read the connection table: {e}")

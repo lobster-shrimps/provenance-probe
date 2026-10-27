@@ -122,7 +122,7 @@ provenance-probe fleet-scan --egress --i-am-authorized   # --min-upstreams N to 
 
 Bare `--egress` is deliberately narrow, for the no-egress invariant:
 
-- It reads the connection table with `lsof -n` (no DNS) and **makes no network
+- It reads the connection table with `lsof -nP -R` (no DNS) and **makes no network
   call**. A snapshot yields upstream **IPs**, not entities — turning an IP into an
   operator needs reverse-DNS/RDAP, which is a network call and therefore an *opt-in*
   step (see below), never something the bare collector does.
@@ -136,10 +136,10 @@ Bare `--egress` is deliberately narrow, for the no-egress invariant:
   **qualified as "current user's sockets only"** (in the headline, report, and JSON)
   when the scan isn't root, so it never reads as an unqualified clean. Run it as root
   (or via the scheduled-scan unit) for a host-wide view.
-- Single-process assumption: fan-out attributes the listener and its upstreams to one
-  `(command, pid)`. A pre-fork router (LiteLLM under gunicorn/uvicorn workers) splits
-  the listening master from the upstream-holding workers across pids, which this
-  increment does not yet aggregate — corroborate with the config scan.
+- Pre-fork routers count as one fan-out. A listening master and the workers that
+  share its listen port, or whose parent pid is that listener, contribute one
+  combined upstream count. The finding names the listener. A different program, or
+  the same command with a different parent and a different port, stays separate.
 
 ### Tier-2 attribution (opt-in, EGRESS/capture — separate from the no-egress collector)
 
