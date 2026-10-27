@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 CONFIGURED = "configured"          # found in a config file / env var (may be stale)
 ACTIVE_PROCESS = "active-process"  # a running process is using it (B-phase)
 OBSERVED = "observed"              # observed egress on the wire (B-phase)
+IMPORTED_LOG = "imported-log"      # a log the operator handed over; not a socket table
 
 # --- Classification states (exhaustive) ------------------------------------- #
 SANCTIONED = "sanctioned"                          # on the allowlist
@@ -49,6 +50,8 @@ class Finding:
     via_gateway: str = ""           # gateway name if this upstream was resolved through one
     attribution: Attribution | None = None
     notes: list[str] = field(default_factory=list)
+    client: str = ""                # workstation or id.orig_h, when a log row had one
+    seen_at: str = ""               # row timestamp, when the log had one
 
 
 @dataclass(frozen=True)
@@ -58,9 +61,13 @@ class ScanResult:
     sanctioned: int
     drifted: int                    # anything not sanctioned
     unresolved: int                 # gateway-upstream-unresolved + aggregator-unresolvable
+    unattributed_names: int = 0     # unique log names with no corpus hit; not findings
 
     @property
     def headline(self) -> str:
         total = self.sanctioned + self.drifted
-        return (f"allowlist holding: {self.sanctioned}/{total} sanctioned, "
+        line = (f"allowlist holding: {self.sanctioned}/{total} sanctioned, "
                 f"{self.drifted} drifted ({self.unresolved} unresolved)")
+        if self.unattributed_names:
+            line += f"; {self.unattributed_names} unattributed names"
+        return line

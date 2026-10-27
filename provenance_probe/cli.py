@@ -895,9 +895,9 @@ def cmd_fleet_scan(a):
             getattr(a, "print", None) or getattr(a, "rollup", None)
             or getattr(a, "egress", False) or getattr(a, "ja3", False)
             or getattr(a, "trust_store", False)):
-        print("fleet-scan: --dns-log joins an offline log into the config scan. "
-              "It does not combine with --print, --rollup, --egress, --ja3, or "
-              "--trust-store.", file=_sys.stderr)
+        print("fleet-scan: --dns-log reads an offline log and does not scan this "
+              "machine. It does not combine with --print, --rollup, --egress, "
+              "--ja3, or --trust-store.", file=_sys.stderr)
         return 1
 
     # --fail-on / --fail-on-exposure gate the rollup ONLY; using either without
@@ -1101,8 +1101,10 @@ def cmd_fleet_scan(a):
               "endpoint reads as drift.", file=_sys.stderr)
 
     # home-relative sources so a username never leaks (redaction guardrail).
-    dns_log_text = None
+    # --dns-log is a different mode: the file the operator handed over, not
+    # this machine's config or environment.
     if getattr(a, "dns_log", None):
+        from .fleet.dnslog import LogUnavailable, scan_log
         try:
             with open(_os.path.expanduser(a.dns_log), encoding="utf-8", errors="replace") as fh:
                 dns_log_text = fh.read()
@@ -1114,12 +1116,14 @@ def cmd_fleet_scan(a):
             print("fleet-scan --dns-log: empty log is not a clean bill",
                   file=_sys.stderr)
             return 3
-    from .fleet.dnslog import LogUnavailable
-    try:
-        result = run_scan(allowlist_text, home="~", dns_log_text=dns_log_text)
-    except LogUnavailable as e:
-        print(f"fleet-scan --dns-log: {e} (not a clean bill)", file=_sys.stderr)
-        return 3
+        try:
+            result = scan_log(dns_log_text, allowlist_text,
+                              columns=getattr(a, "dns_columns", None))
+        except LogUnavailable as e:
+            print(f"fleet-scan --dns-log: {e} (not a clean bill)", file=_sys.stderr)
+            return 3
+    else:
+        result = run_scan(allowlist_text, home="~")
     redact = not a.no_redact
 
     # Stamp the report with this machine's id + scan time so a directory-of-JSON
@@ -1480,9 +1484,17 @@ def main(argv=None):
                                        "# comments ok). Without it, everything reads as drift.")
     s.add_argument("--dns-log",
                    help="offline DNS, SNI, or proxy log (Zeek #fields or CSV). "
-                        "Joined to the corpus and allowlist. No network. An empty "
-                        "or unreadable file is not a clean result (exit 3). A row "
-                        "that only names a non-loopback gateway stays unresolved.")
+                        "Log only: does not scan this machine. No network. "
+                        "Corpus-attributed hosts are findings; other names are "
+                        "a count. An empty or unreadable file is not a clean "
+                        "result (exit 3). A gateway, proxy, or via column with "
+                        "no destination stays unresolved.")
+    s.add_argument("--dns-columns",
+                   help="column map for --dns-log, e.g. "
+                        "dest=url,client=src_ip,time=ts. dest replaces the "
+                        "default SNI/DNS columns (query, server_name, sni). "
+                        "client and time are kept from ts and id.orig_h when "
+                        "those columns are already present.")
     s.add_argument("--json", action="store_true",
                    help="emit the report as JSON (for --rollup, an alias for "
                         "--format json)")

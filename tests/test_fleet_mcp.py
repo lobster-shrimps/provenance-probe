@@ -83,3 +83,21 @@ def test_base_url_and_url_for_the_same_host_count_once():
     result = run_scan("", environ={}, read_text=_reader({"~/.cursor/mcp.json": body}))
     assert [f.host for f in result.findings] == ["api.deepseek.com"]
     assert SECRET not in json.dumps(to_json(result))
+
+
+@pytest.mark.unit
+def test_dotted_argv_token_is_not_a_host():
+    body = json.dumps({"mcpServers": {"pkg": {
+        "command": "npx",
+        "args": ["-y", "some.package"],
+    }}})
+    result = run_scan("", environ={}, read_text=_reader({"~/.cursor/mcp.json": body}))
+    assert result.findings == []
+
+
+@pytest.mark.unit
+def test_loopback_mcp_url_is_quiet():
+    for url in ("http://127.0.0.1:8765/mcp", "127.0.0.1", "http://localhost:8765/mcp"):
+        body = json.dumps({"mcpServers": {"local": {"url": url}}})
+        result = run_scan("", environ={}, read_text=_reader({"~/.cursor/mcp.json": body}))
+        assert result.findings == []

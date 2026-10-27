@@ -46,6 +46,10 @@ def _finding_json(f: Finding, redact: bool) -> dict:
         "via_gateway": f.via_gateway,
         "notes": f.notes,
     }
+    if f.client:
+        d["client"] = f.client
+    if f.seen_at:
+        d["seen_at"] = f.seen_at
     if f.attribution is not None:
         d["attribution"] = {
             "operator": f.attribution.operator,
@@ -72,6 +76,8 @@ def to_json(result: ScanResult, redact: bool = True, *,
         "redacted": redact,
         "findings": [_finding_json(f, redact) for f in result.findings],
     }
+    if result.unattributed_names:
+        out["unattributed_names"] = result.unattributed_names
     if machine is not None:
         out["machine"] = machine
     if scanned_at is not None:
@@ -243,7 +249,8 @@ def render_ja3_console(observations) -> str:
 def render_console(result: ScanResult, redact: bool = True) -> str:
     lines: list[str] = [result.headline, ""]
     if not result.findings:
-        lines.append("  no agent-CLI base_url configuration found.")
+        if not result.unattributed_names:
+            lines.append("  no agent-CLI base_url configuration found.")
         return "\n".join(lines)
     for f in result.findings:
         marker = "OK  " if f.classification == SANCTIONED else "FLAG"
@@ -252,6 +259,13 @@ def render_console(result: ScanResult, redact: bool = True) -> str:
         lines.append(f"  [{marker}] {f.host or '(unparsed)'}{via}  "
                      f"({f.classification}, evidence: {f.evidence_tier})")
         lines.append(f"      source: {src}  base_url: {f.base_url}")
+        who = []
+        if f.client:
+            who.append(f"client {f.client}")
+        if f.seen_at:
+            who.append(f"time {f.seen_at}")
+        if who:
+            lines.append("      " + "  ".join(who))
         if f.classification == OFF_ALLOWLIST_ATTRIBUTED:
             lines.append(_attr_line(f))
         for n in f.notes:

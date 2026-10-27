@@ -12,16 +12,23 @@
   inventory). The caught trace matches the ids already in that file. A prefill
   completion from the dataset README stays quiet. No new behavior ids.
 
-- **MCP server hosts.** `.cursor/mcp.json` now contributes an MCP `url` and a
-  host in `command` / `args`, with header values and URL userinfo stripped.
-  The same host is not counted twice when a `base_url` is also present. A
-  local command with no remote host stays quiet.
-
-- **Offline DNS / SNI / proxy-log join.** `fleet-scan --dns-log` classifies
-  destination hosts in a Zeek `#fields` log or a CSV against the corpus and the
-  allowlist. No socket and no DNS lookup. A row that only names a non-loopback
-  gateway stays `gateway-upstream-unresolved`. An empty or unreadable file
+- **Offline DNS / SNI / proxy-log join.** `fleet-scan --dns-log` is log-only:
+  it does not scan the operator's home. Destination hosts in a Zeek `#fields`
+  log or a CSV are classified against the corpus and the allowlist on the
+  `imported-log` tier. Corpus-attributed hosts are findings; other names,
+  including a destination labeled `ai-gateway`, are a count. A `gateway` /
+  `proxy` / `via` column with no destination stays
+  `gateway-upstream-unresolved`. `--dns-columns dest=…,client=…,time=…` maps
+  a vendor export, and client and time are kept when the row has them. The
+  JSON report is a rollup input, so `--fail-on prc` can see those rows. No
+  socket and no DNS lookup. An empty, unreadable, or unrecognized file
   exits 3 (not a clean bill).
+
+- **MCP server hosts.** `.cursor/mcp.json` contributes an MCP `url` and a
+  scheme-bearing URL in `command` / `args`, with header values and URL
+  userinfo stripped. A dotted package argument is not a host. A loopback URL
+  stays quiet. The same host is not counted twice when a `base_url` is also
+  present. A local command with no remote host stays quiet.
 
 - **Concerning agent behavior (Cohere, 2026-10-26).** `agent.analyze` and
   `agent-trace` scan a captured trace for the Qwen tool artifacts in

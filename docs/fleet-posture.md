@@ -46,27 +46,41 @@ of a posture, not the subject of a dragnet.
 ## Offline DNS / SNI / proxy log
 
 Config files and a one-moment socket table miss traffic the network already
-logged. `fleet-scan --dns-log` reads a Zeek `#fields` log or a CSV (a `query`,
-`server_name` / `sni`, or `host` column) and classifies each destination with
-the same corpus match and allowlist. It does not open a socket and does not
-resolve DNS.
+logged. `fleet-scan --dns-log` reads a Zeek `#fields` log or a CSV and
+classifies destinations with the corpus and the allowlist. It does not scan
+the machine it runs on, and it does not open a socket.
+
+Default destination columns are `query`, `server_name`, `sni`, `ssl.sni`,
+`http.host`, and `http.hostname`. A bare `host` column is not a destination
+(it is often the workstation). `url` and `domain` need an explicit map:
 
 ```sh
 provenance-probe fleet-scan --allowlist allow.txt --dns-log ssl.log
+provenance-probe fleet-scan --allowlist allow.txt --dns-log proxy.csv \
+  --dns-columns dest=url,client=src_ip,time=ts
 ```
 
-A row that only names a non-loopback gateway (`gateway`, `proxy`, or `via`, or
-a host whose DNS label is `ai-gateway` or `llm-gateway`) stays
-`gateway-upstream-unresolved`. Putting that gateway on the allowlist does not
-turn the row into a sanctioned upstream: the log never named one, and this
-import does not read the gateway's config. An empty or unreadable file exits 3.
-That is not a clean holding line.
+Corpus-attributed hosts come first, on the `imported-log` tier. Names the
+corpus does not know, including a destination whose label is `ai-gateway`,
+are a count on the headline, not one drifted finding each. IP-only rows are
+part of that count. `id.orig_h` / `src_ip` / `client` and `ts` / `timestamp` /
+`time` are kept when the export has them.
 
-`.cursor/mcp.json` is one of the config files the scan already opens. A remote
-MCP server is often a `url`, or a host in `command` / `args`, rather than a
-`base_url` key. Those hosts are recorded too. Header values are not. The same
-host is not counted twice when both fields name it. A local `npx` server with
-no remote host is quiet.
+A `gateway`, `proxy`, or `via` column with no destination stays
+`gateway-upstream-unresolved`. Putting that name on the allowlist does not
+turn the row into a sanctioned upstream: the log never named one. An empty
+or unreadable file, or a file with no recognized destination column, exits 3.
+
+Write `--json --out report.json`, then
+`fleet-scan --rollup report.json --fail-on prc`. The rollup counts
+`attribution.origin`. It does not run in the same command as `--dns-log`.
+
+`.cursor/mcp.json` is one of the config files the home scan already opens. A
+remote MCP server is often a `url`, or an `https://` host in `command` /
+`args`, rather than a `base_url` key. Those hosts are recorded too. Header
+values are not. The same host is not counted twice when both fields name it.
+A dotted package argument is not a host. A loopback URL (`127.0.0.1`,
+`localhost`) is quiet, the same way a local `npx` server is.
 
 ## The KPI: allowlist-holding, not a rogue list
 

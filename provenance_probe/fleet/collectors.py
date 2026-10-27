@@ -55,18 +55,28 @@ _SECRET_ARG = re.compile(
 )
 
 
-def _safe_endpoint(value: str) -> str:
-    """Hostname URL with userinfo and query stripped. Empty when it is not a host."""
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+
+
+def _safe_endpoint(value: str, *, require_scheme: bool = False) -> str:
+    """Hostname URL with userinfo and query stripped. Empty when it is not a host.
+
+    `require_scheme` refuses a dotted token that is not a URL (a package name
+    or a filename). Loopback listeners are quiet: this scanner does not treat
+    them as a remote MCP server.
+    """
     raw = (value or "").strip().strip("'\"")
     if not raw or (_SECRET_ARG.search(raw) and "://" not in raw):
+        return ""
+    if require_scheme and "://" not in raw:
         return ""
     safe = strip_userinfo(raw)
     try:
         parts = urlsplit(safe if "://" in safe else "http://" + safe)
     except ValueError:
         return ""
-    host = parts.hostname or ""
-    if not host or "." not in host:
+    host = (parts.hostname or "").lower()
+    if not host or "." not in host or host in _LOOPBACK_HOSTS:
         return ""
     hostpart = f"[{host}]" if ":" in host else host
     netloc = f"{hostpart}:{parts.port}" if parts.port else hostpart
@@ -89,7 +99,7 @@ def _endpoints_from_argv(parts: list[str]) -> list[str]:
             continue
         if low.startswith("--header=") or low.startswith("-h="):
             continue
-        ep = _safe_endpoint(token)
+        ep = _safe_endpoint(token, require_scheme=True)
         if ep:
             out.append(ep)
     return out
