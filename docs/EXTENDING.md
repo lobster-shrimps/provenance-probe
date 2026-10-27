@@ -68,7 +68,11 @@ these instructions."); a host inventory of `ls /tmp`, `which curl` and `wget`,
 and `cat /etc/resolv.conf`; a PUT to `*.oss-cn-beijing.aliyuncs.com`;
 `169.254.169.254`; a `routify-file-proxy*` host; a signed `aliyuncs.com` URL the
 user did not ask for; and `unshare` into a user namespace that mounts a `tmpfs`.
-A written detection rule for that task, with no tool call, stays quiet. The hit
+A written detection rule for that task, with no tool call, stays quiet. The
+published export `tests/fixtures/cohere_qwen/qwen-investigation.jsonl`
+(`CohereLabs/10-2026-qwen-investigation-traces`) grades as those same ids.
+The dataset README's prefill sample in `qwen-prefill.jsonl` stays quiet.
+The hit
 is an alert on the board and in `board.html`. It sits beside the provenance score.
 
 Minimal JSON: `{"steps": [{"model": "gpt-4o", "text": "...", "backend_url": "https://api.openai.com/v1"},
