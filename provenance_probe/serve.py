@@ -2238,6 +2238,13 @@ or track the service on the
  <h3 style="margin-top:0">Watch status</h3>
  <div><span id=pill class=pill>idle</span></div>
  <div id=status class=stat style="margin-top:10px">Not watching yet. Fill in the target, confirm authorization, and press start.</div>
+ <div id=unattended class=stat style="margin-top:8px">Unattended timer: every 12 hours, one pass, then exit.
+  <span class=mono>provenance-probe watch --print-launchd --config examples/private-watch.json --interval 12h</span>
+  runs <span class=mono>watch --once</span>. Behavioral checks stay off. Do not also start <span class=mono>watch --loop</span>.
+  The three targets in that file are Gemini flash models, not the Observatory nightly six.</div>
+ <div id=addtarget class=stat style="margin-top:8px">A new API or web target reaches the Observatory as an entry in
+  <span class=mono>targets.yaml</span> (<span class=mono>docs/adding-targets.md</span> in that repo). Leave it unauthorized until there is written authorization.
+  The 03:17 UTC nightly cron does not change. The <a href="/wizard">Add target</a> wizard writes the same fields into a local JSON file for this watch.</div>
  <div id=baseinfo class=stat style="margin-top:6px"></div>
  <div id=checkinfo class=stat style="margin-top:6px"></div>
 </div>

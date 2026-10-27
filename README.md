@@ -179,28 +179,34 @@ provenance-probe fleet-scan --allowlist allow.txt --dns-log ssl.log --fail-on pr
 `watch` is the unattended, **local** counterpart to the tab-bound hosted watch: it re-probes your own targets on a schedule and raises a loud local alert the instant a served model silently changes — no browser, no open terminal, survives logout. It reuses the exact assess path + fingerprint + `monitor.diff` (no new detection logic), so its baselines are byte-identical to `serve` / the Observatory.
 
 ```bash
-provenance-probe watch --once  --config targets.json    # one pass; exit 2 on ANY drift (cron/CI primitive)
-provenance-probe watch --loop  --config targets.json --interval 30m   # run forever; Ctrl-C to stop cleanly
-provenance-probe watch --pin   --config targets.json    # accept the current backend as the new baseline
+provenance-probe watch --pin   --config examples/private-watch.json
+provenance-probe watch --once  --config examples/private-watch.json   # one pass; exit 2 on drift
 ```
+
+The private list is three Gemini flash models (`GEMINI_API_KEY`). They are not the Observatory nightly six (DeepSeek, OpenAI, Anthropic, Moonshot). Behavioral checks stay off. Do not also start `watch --loop`.
 
 First run **seeds** a per-target baseline under `~/.provenance-probe/watch/<target>/` (no drift). On drift you get a stderr **MODEL SWITCH DETECTED** banner, a machine-readable record appended to `switches.jsonl`, a best-effort desktop notification, and — with `--webhook <url>` — a POST of the (secret-free) switch record. Keys/cookies read from your config **never** appear in any alert sink.
 
 **Make it always-on:**
 
 ```bash
-# macOS (launchd)
-provenance-probe watch --print-launchd --config "$PWD/targets.json" > ~/Library/LaunchAgents/com.provenance-probe.watch.plist
-launchctl load ~/Library/LaunchAgents/com.provenance-probe.watch.plist
+# macOS (launchd) — every 12 hours, one pass, then exit
+provenance-probe watch --print-launchd --config examples/private-watch.json --interval 12h \
+  > ~/Library/LaunchAgents/com.provenance-probe.watch.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.provenance-probe.watch.plist
 
-# Linux (systemd --user): the generator prints a .service + .timer with install steps
-provenance-probe watch --print-systemd --config "$PWD/targets.json"
+# Linux (systemd --user): the generator prints a .service + .timer
+provenance-probe watch --print-systemd --config examples/private-watch.json --interval 12h
 
-# Windows: register a Task Scheduler task running `provenance-probe watch --once --config <path>`
-#   schtasks /Create /SC HOURLY /TN provenance-probe-watch /TR "provenance-probe watch --once --config C:\path\targets.json"
+# Windows: register a task every 12 hours, not hourly
+#   schtasks /Create /SC HOURLY /MO 12 /TN provenance-probe-watch /TR "provenance-probe watch --once --config C:\path\examples\private-watch.json"
 ```
 
-The daemon runs behavioral/deception probes **off** by default for a fast, cheap re-check (tokenizer, wire and determinism stay on — the strongest swap signals); opt back in with `--behavioral` / `--deception`.
+Pin once before the first timer fire. The unit runs `watch --once`. It does not pass `--behavioral` or `--loop`. The 60-minute loop default is not this timer.
+
+Launchd does not read your shell rc. `GEMINI_API_KEY` has to be in the job's environment. Do not put the key in the plist or in git.
+
+**Observatory.** A new API or web target is an entry in the Observatory `targets.yaml`. The field guide is that repo's `docs/adding-targets.md`. Leave `authorized: false` until there is written authorization. The Add target wizard (`provenance-probe serve`, then `/wizard`) writes the same fields into a local JSON file. The nightly cron stays `17 3 * * *` UTC. Do not add these three Gemini models there; this 12-hour watch is the other clock.
 
 ### 🛰️ Live agent flight recorder (`sentinel`)
 

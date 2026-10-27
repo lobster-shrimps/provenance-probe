@@ -240,9 +240,11 @@ WATCHING_PRIMER: "tuple[str, ...]" = (
     "storage or to your browser's saved data — which is what lets the watch run the "
     "same way on the hosted demo as it does locally.",
     "One honest limit: a browser-tab watch only runs while the tab stays open. For "
-    "always-on, unattended monitoring, run the provenance-probe watch daemon locally "
-    "(it re-checks on a timer and installs under launchd or systemd) or track the "
-    "service on the public Observatory, which watches well-known endpoints continuously.")
+    "always-on, unattended monitoring, install the watch timer locally at 12 hours. "
+    "It runs watch --once and then exits. Behavioral checks stay off. Do not also "
+    "start watch --loop. The public Observatory still runs once a night at 03:17 UTC. "
+    "A new API or web target is an entry in the Observatory targets.yaml; that cron "
+    "does not change.")
 
 # Plain-language tour of each flow in the web UI, in nav order.
 FLOWS: "tuple[tuple[str, str], ...]" = (

@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+- **Private 12-hour watch.** `examples/private-watch.json` is three Gemini flash
+  models, not the Observatory nightly six. The timer is the existing
+  `watch --print-launchd` / `--print-systemd` path with `--interval 12h`.
+  It runs `watch --once` and does not pass `--behavioral` or `--loop`.
+  Pin once, then let the timer fire. The nightly cron stays `17 3 * * *` UTC.
+
 - **Pinned Qwen trace.** The published
   `CohereLabs/10-2026-qwen-investigation-traces` JSONL is graded by the
   existing checker (Pi JSONL; semicolon-separated commands count as the same

@@ -1,0 +1,29 @@
+[
+  {
+    "name": "gemini-flash-latest",
+    "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "model": "gemini-flash-latest",
+    "api_style": "openai",
+    "auth_value_env": "GEMINI_API_KEY",
+    "authorized": true,
+    "notes": "Private 12h watch. Not one of the Observatory nightly six. Flash tier."
+  },
+  {
+    "name": "gemini-2.5-flash",
+    "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "model": "gemini-2.5-flash",
+    "api_style": "openai",
+    "auth_value_env": "GEMINI_API_KEY",
+    "authorized": true,
+    "notes": "Private 12h watch. Not one of the Observatory nightly six. Flash tier."
+  },
+  {
+    "name": "gemini-flash-lite-latest",
+    "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "model": "gemini-flash-lite-latest",
+    "api_style": "openai",
+    "auth_value_env": "GEMINI_API_KEY",
+    "authorized": true,
+    "notes": "Private 12h watch. Not one of the Observatory nightly six. Flash tier."
+  }
+]

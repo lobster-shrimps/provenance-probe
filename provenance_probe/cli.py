@@ -1380,17 +1380,27 @@ def main(argv=None):
     s.add_argument("--config", default="targets.json", help="same target config as `assess`")
     _mode = s.add_mutually_exclusive_group(required=True)
     _mode.add_argument("--loop", action="store_const", dest="mode", const="loop",
-                       help="run forever on a timer (re-check + alert; clean SIGINT/SIGTERM shutdown)")
+                       help="run forever in this process. Do not install this beside "
+                            "the 12h watch --once timer")
     _mode.add_argument("--once", action="store_const", dest="mode", const="once",
-                       help="single pass over all targets; exit 2 on ANY drift (the cron/launchd primitive)")
+                       help="single pass over all targets, then exit; exit 2 on ANY "
+                            "drift. This is what the 12h launchd/systemd timer runs. "
+                            "Behavioral checks stay off unless --behavioral is set")
     _mode.add_argument("--pin", "--reset-baseline", action="store_const", dest="mode", const="pin",
                        help="re-pin the baseline to the current fingerprint (accept a new backend)")
     _mode.add_argument("--print-launchd", action="store_const", dest="mode", const="launchd",
-                       help="emit a macOS launchd .plist that runs `watch --once` (stdout)")
+                       help="emit a macOS launchd plist that runs watch --once "
+                            "(not --loop) on StartInterval. Private timer: "
+                            "--interval 12h --config examples/private-watch.json")
     _mode.add_argument("--print-systemd", action="store_const", dest="mode", const="systemd",
-                       help="emit a Linux systemd .service + .timer that run `watch --once` (stdout)")
+                       help="emit a Linux systemd service + timer that run watch --once "
+                            "(not --loop). Private timer: --interval 12h")
     s.add_argument("--interval", default="60m",
-                   help="loop / schedule interval as 30s / 15m / 1h; default 60m")
+                   help="loop interval, or the StartInterval for --print-launchd / "
+                        "--print-systemd, as 30s / 15m / 12h. The private unattended "
+                        "timer is 12h and runs watch --once with behavioral checks "
+                        "off. Default 60m is only the in-process loop; do not install "
+                        "that default")
     s.add_argument("--jitter", type=float, default=0.10,
                    help="loop jitter as a fraction of the interval (0..1), capped at 30s; default 0.10")
     s.add_argument("--no-jitter", action="store_true", help="disable loop jitter (equivalent to --jitter 0)")
