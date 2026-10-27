@@ -62,6 +62,12 @@ turn the row into a sanctioned upstream: the log never named one, and this
 import does not read the gateway's config. An empty or unreadable file exits 3.
 That is not a clean holding line.
 
+`.cursor/mcp.json` is one of the config files the scan already opens. A remote
+MCP server is often a `url`, or a host in `command` / `args`, rather than a
+`base_url` key. Those hosts are recorded too. Header values are not. The same
+host is not counted twice when both fields name it. A local `npx` server with
+no remote host is quiet.
+
 ## The KPI: allowlist-holding, not a rogue list
 
 The report headline is the posture's health, not an accusation:

@@ -6,6 +6,11 @@
 
 ## [Unreleased]
 
+- **MCP server hosts.** `.cursor/mcp.json` now contributes an MCP `url` and a
+  host in `command` / `args`, with header values and URL userinfo stripped.
+  The same host is not counted twice when a `base_url` is also present. A
+  local command with no remote host stays quiet.
+
 - **Offline DNS / SNI / proxy-log join.** `fleet-scan --dns-log` classifies
   destination hosts in a Zeek `#fields` log or a CSV against the corpus and the
   allowlist. No socket and no DNS lookup. A row that only names a non-loopback

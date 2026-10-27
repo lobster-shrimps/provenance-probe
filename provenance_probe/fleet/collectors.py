@@ -15,6 +15,7 @@ developer shell / IDE / direnv / npm session. Env findings carry that caveat.
 """
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable
 from urllib.parse import urlsplit, urlunsplit
@@ -46,6 +47,96 @@ def strip_userinfo(url: str) -> str:
     rebuilt = urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
     # If we synthesized the scheme, drop it back to how it came in (schemeless rare).
     return rebuilt if "://" in s else rebuilt.split("://", 1)[-1]
+
+
+_HEADER_FLAGS = {"-h", "--header", "--headers"}
+_SECRET_ARG = re.compile(
+    r"(?i)(?:^|[\s=])(?:authorization|bearer|api[_-]?key|token|sk-|x-api-key)\b"
+)
+
+
+def _safe_endpoint(value: str) -> str:
+    """Hostname URL with userinfo and query stripped. Empty when it is not a host."""
+    raw = (value or "").strip().strip("'\"")
+    if not raw or (_SECRET_ARG.search(raw) and "://" not in raw):
+        return ""
+    safe = strip_userinfo(raw)
+    try:
+        parts = urlsplit(safe if "://" in safe else "http://" + safe)
+    except ValueError:
+        return ""
+    host = parts.hostname or ""
+    if not host or "." not in host:
+        return ""
+    hostpart = f"[{host}]" if ":" in host else host
+    netloc = f"{hostpart}:{parts.port}" if parts.port else hostpart
+    scheme = parts.scheme if "://" in safe else "https"
+    return urlunsplit((scheme, netloc, parts.path, "", "")).rstrip("/")
+
+
+def _endpoints_from_argv(parts: list[str]) -> list[str]:
+    """Hosts named in an MCP command line. Header values are skipped, not stored."""
+    out: list[str] = []
+    skip = False
+    for part in parts:
+        token = str(part).strip()
+        if skip:
+            skip = False
+            continue
+        low = token.lower()
+        if low in _HEADER_FLAGS:
+            skip = True
+            continue
+        if low.startswith("--header=") or low.startswith("-h="):
+            continue
+        ep = _safe_endpoint(token)
+        if ep:
+            out.append(ep)
+    return out
+
+
+def extract_mcp_server_urls(text: str) -> list[str]:
+    """Remote MCP server URLs and command-line hosts.
+
+    `url` is the usual remote field and is not a base_url key, so the generic
+    regex misses it. Header maps and `-H` / `--header` arguments are dropped.
+    A local `command` with no host contributes nothing. De-duplicated.
+    """
+    try:
+        doc = json.loads(text or "")
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(doc, dict):
+        return []
+    servers = doc.get("mcpServers")
+    if not isinstance(servers, dict):
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def add(ep: str) -> None:
+        if ep and ep not in seen:
+            seen.add(ep)
+            out.append(ep)
+
+    for spec in servers.values():
+        if not isinstance(spec, dict):
+            continue
+        url = spec.get("url")
+        if isinstance(url, str):
+            add(_safe_endpoint(url))
+        argv: list[str] = []
+        command = spec.get("command")
+        if isinstance(command, str):
+            argv.append(command)
+        args = spec.get("args")
+        if isinstance(args, list):
+            argv.extend(str(a) for a in args)
+        elif isinstance(args, str):
+            argv.append(args)
+        for ep in _endpoints_from_argv(argv):
+            add(ep)
+    return out
 
 # Per-tool config files to scan (path is relative to home; "~" expanded by caller).
 # These are home-relative dotfile paths, so they resolve on macOS, Linux AND Windows
@@ -106,10 +197,18 @@ def collect_config_files(
             text = None
         if not text:
             continue
-        for url in extract_base_urls_from_text(text):
+        urls = list(extract_base_urls_from_text(text))
+        if rel.endswith("mcp.json") or path.endswith("mcp.json"):
+            urls.extend(extract_mcp_server_urls(text))
+        seen_hosts: set[str] = set()
+        for url in urls:
             safe = strip_userinfo(url)
+            host = _hostname(safe)
+            if host in seen_hosts:
+                continue
+            seen_hosts.add(host)
             findings.append(Finding(
-                source=path, base_url=safe, host=_hostname(safe),
+                source=path, base_url=safe, host=host,
                 evidence_tier=CONFIGURED, classification="",
             ))
     return findings
