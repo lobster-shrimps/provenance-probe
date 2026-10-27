@@ -274,7 +274,7 @@ def cmd_soak(a):
     when the echoed model id never changes (the founding z.ai shape)."""
     if a.print_example:
         print(soak.print_example())
-        return
+        return 0
 
     targets = load_targets(a.config)
     for t in targets:
@@ -307,8 +307,12 @@ def cmd_soak(a):
                         log=lambda m: print(m, file=sys.stderr))
     print("\n" + soak.summarize(rep))
     print(f"\n[+] {rep['report_path']}")
+    code, gate = soak.switch_gate(rep, fail_on_switch=bool(a.fail_on_switch))
+    if gate:
+        print(gate)
     if a.json:
         print(json.dumps(rep, indent=2))
+    return code
 
 
 def _print_agent_board(result: dict, title: str):
@@ -1366,6 +1370,10 @@ def main(argv=None):
     s.add_argument("--json", action="store_true", help="also print the machine-readable report JSON")
     s.add_argument("--print-example", dest="print_example", action="store_true",
                    help="print a copy-pasteable recipe framing the z.ai seed case, then exit")
+    s.add_argument("--fail-on-switch", dest="fail_on_switch", action="store_true",
+                   help="exit 2 when a CONFIRMED or ADVISORY model switch was recorded "
+                        "(CI gate). A PRC jurisdiction shift or a gap does not trip it. "
+                        "Off by default: soak still exits 0")
     s.add_argument("--i-am-authorized", dest="i_am_authorized", action="store_true",
                    help="attest written authorization to actively probe these targets")
     s.set_defaults(func=cmd_soak)

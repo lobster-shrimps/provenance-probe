@@ -58,6 +58,11 @@ provenance-probe soak --print-example      # copy-pasteable recipe, no network
 provenance-probe soak --config targets.json \
     --duration 30m --interval 2m --card-interval 30s \
     --out ./soak-reports --i-am-authorized
+
+# CI: same soak, exit 2 if a model switch was recorded
+provenance-probe soak --config targets.json \
+    --duration 30m --interval 2m --card-interval 30s \
+    --out ./soak-reports --i-am-authorized --fail-on-switch
 ```
 
 `targets.json` is the **same schema** as `assess` / `watch`. `--i-am-authorized`
@@ -71,6 +76,7 @@ is required (soak actively probes the targets — the same gate as `assess`).
 | `--out` | directory for the stamped `soak-<stamp>.json` report | `./soak-reports` |
 | `--json` | also print the machine-readable report JSON | off |
 | `--print-example` | print the recipe and exit | off |
+| `--fail-on-switch` | exit `2` when any CONFIRMED or ADVISORY switch was recorded. The summary and report still print. A gap, or a PRC jurisdiction shift by itself, stays exit `0` | off |
 
 ## What you get back
 
@@ -109,8 +115,13 @@ point of the soak test.
 - **Failure handling.** A failed/partial poll (unreachable, 401/403, non-2xx) is
   a **no-data** observation: it does **not** update the previous state, does
   **not** emit a switch, is recorded in the timeline as a **gap** with the
-  reason, and never crashes the soak. Soak exits `0` on completion regardless of
-  switches (a `--fail-on-switch` gate is a noted follow-up, out of scope).
+  reason, and never crashes the soak. Without a gate, soak exits `0` on
+  completion regardless of switches. `--fail-on-switch` is the CI gate: the full
+  summary and the stamped report still print, then the process exits `2` when any
+  target recorded a CONFIRMED fingerprint switch or an ADVISORY card switch. A
+  trailing `SWITCH: confirmed=N advisory=M (fail-on-switch -> FAIL|ok)` line says
+  which. A PRC-JURISDICTION-SHIFT is not a model switch, and a gap is not one
+  either, so neither trips the gate.
 - **Isolation.** Each run establishes its **own** t0 baseline and writes an
   isolated, stamped report; it does **not** read or mutate the `watch` daemon's
   persistent baseline / state.

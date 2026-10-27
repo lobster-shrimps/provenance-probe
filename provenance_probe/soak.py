@@ -504,6 +504,27 @@ def summarize(report: dict) -> str:
     return "\n".join(lines)
 
 
+def switch_gate(report: dict, *, fail_on_switch: bool) -> tuple[int, str | None]:
+    """Exit code for ``--fail-on-switch``, plus a one-line console summary.
+
+    Off (the default) the soak exits 0 and this adds no line. On, a CONFIRMED
+    fingerprint switch or an ADVISORY card switch exits 2 after the report has
+    already been written and printed. A PRC-JURISDICTION-SHIFT is its own
+    category, not a model switch, and a gap is a no-data poll: neither trips
+    the gate.
+    """
+    if not fail_on_switch:
+        return 0, None
+    confirmed = advisory = 0
+    for tr in report.get("targets") or []:
+        confirmed += int(tr.get("confirmed_switches") or 0)
+        advisory += int(tr.get("advisory_switches") or 0)
+    verdict = "FAIL" if confirmed or advisory else "ok"
+    line = (f"SWITCH: confirmed={confirmed} advisory={advisory} "
+            f"(fail-on-switch -> {verdict})")
+    return (2 if confirmed or advisory else 0), line
+
+
 def print_example() -> str:
     """A copy-pasteable recipe framing the founding z.ai case as the seed."""
     return (
@@ -529,6 +550,10 @@ def print_example() -> str:
         "provenance-probe soak --config targets.json \\\n"
         "    --duration 30m --interval 2m --card-interval 30s \\\n"
         "    --out ./soak-reports --i-am-authorized\n"
+        "#\n"
+        "# CI gate: the same run exits 2 when a CONFIRMED or ADVISORY switch was\n"
+        "# recorded. A gap, or a PRC jurisdiction shift alone, still exits 0.\n"
+        "# provenance-probe soak ... --fail-on-switch\n"
         "#\n"
         "# A per-target timeline + a CONFIRMED/ADVISORY summary print at the end; a\n"
         "# stamped report lands in ./soak-reports/soak-<stamp>.json. Add --json to\n"

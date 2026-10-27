@@ -383,3 +383,137 @@ def test_soak_surfaces_prc_jurisdiction_shift_category(home):
     text = soak.summarize({"duration_s": 60, "interval_s": 30,
                            "card_interval_s": 30, "targets": [rep]})
     assert "PRC-JURISDICTION-SHIFT" in text
+
+
+# --------------------------------------------------------------------------- #
+# --fail-on-switch: CI gate. Default stays exit 0. CONFIRMED and ADVISORY
+# trip exit 2. A PRC jurisdiction shift and a gap do not.
+# --------------------------------------------------------------------------- #
+def _switch_report(*, confirmed=0, advisory=0, prc=0, gaps=None, name="zai"):
+    return {
+        "report_path": "/tmp/soak-stamp.json",
+        "duration_s": 60,
+        "interval_s": 30,
+        "card_interval_s": 30,
+        "targets": [{
+            "name": name,
+            "cycles": 2,
+            "confirmed_switches": confirmed,
+            "advisory_switches": advisory,
+            "prc_jurisdiction_shifts": prc,
+            "transitions": [],
+            "gaps": list(gaps or []),
+        }],
+    }
+
+
+@pytest.mark.unit
+def test_switch_gate_is_off_by_default():
+    code, line = soak.switch_gate(_switch_report(confirmed=1, advisory=1),
+                                  fail_on_switch=False)
+    assert code == 0 and line is None
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("confirmed,advisory,prc,expected,verdict", [
+    (1, 0, 0, 2, "FAIL"),
+    (0, 1, 0, 2, "FAIL"),
+    (1, 2, 1, 2, "FAIL"),
+    (0, 0, 1, 0, "ok"),
+    (0, 0, 0, 0, "ok"),
+])
+def test_switch_gate_counts_model_switches_only(confirmed, advisory, prc, expected, verdict):
+    report = _switch_report(confirmed=confirmed, advisory=advisory, prc=prc,
+                            gaps=[{"ts": "t", "reason": "unreachable"}])
+    # a second target with no switches must still be summed, not ignored
+    report["targets"].append(_switch_report(name="other")["targets"][0])
+    code, line = soak.switch_gate(report, fail_on_switch=True)
+    assert code == expected
+    assert line == (f"SWITCH: confirmed={confirmed} advisory={advisory} "
+                    f"(fail-on-switch -> {verdict})")
+
+
+def _write_target(tmp_path):
+    cfg = tmp_path / "targets.json"
+    cfg.write_text(json.dumps({
+        "name": "zai",
+        "base_url": "https://example.invalid/v1",
+        "model": "gemini-pro",
+        "authorized": True,
+    }))
+    return cfg
+
+
+def _cli_report(tmp_path, **counts):
+    rep = _switch_report(**counts)
+    rep["report_path"] = str(tmp_path / "soak-stamp.json")
+    if counts.get("confirmed"):
+        rep["targets"][0]["transitions"] = [{
+            "grade": "CONFIRMED", "ts": "t1", "signal": "fingerprint",
+            "from": "gemini-shape", "to": "glm-shape",
+        }]
+    elif counts.get("advisory"):
+        rep["targets"][0]["transitions"] = [{
+            "grade": "ADVISORY", "ts": "t1", "signal": "model-card",
+            "from": {"model_id": "gemini-pro"}, "to": {"model_id": "glm"},
+        }]
+    return rep
+
+
+@pytest.mark.unit
+def test_cli_fail_on_switch_exits_2_and_still_prints(tmp_path, monkeypatch, capsys):
+    from provenance_probe.cli import main
+    rep = _cli_report(tmp_path, confirmed=1)
+    monkeypatch.setattr(soak, "run_soak", lambda *a, **k: rep)
+    rc = main(["soak", "--config", str(_write_target(tmp_path)),
+               "--duration", "1s", "--out", str(tmp_path),
+               "--i-am-authorized", "--fail-on-switch"])
+    out = capsys.readouterr().out
+    assert rc == 2
+    assert "CONFIRMED  fingerprint gemini-shape -> glm-shape" in out
+    assert rep["report_path"] in out
+    assert "SWITCH: confirmed=1 advisory=0 (fail-on-switch -> FAIL)" in out
+
+
+@pytest.mark.unit
+def test_cli_without_the_gate_exits_0_on_a_switch(tmp_path, monkeypatch, capsys):
+    from provenance_probe.cli import main
+    monkeypatch.setattr(soak, "run_soak",
+                        lambda *a, **k: _cli_report(tmp_path, confirmed=1))
+    rc = main(["soak", "--config", str(_write_target(tmp_path)),
+               "--duration", "1s", "--out", str(tmp_path), "--i-am-authorized"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "fail-on-switch" not in out
+    assert "CONFIRMED" in out
+
+
+@pytest.mark.unit
+def test_cli_gate_ignores_a_jurisdiction_shift_and_a_gap(tmp_path, monkeypatch, capsys):
+    from provenance_probe.cli import main
+    rep = _cli_report(tmp_path, prc=1, gaps=[{"ts": "t0", "reason": "401"}])
+    rep["targets"][0]["transitions"] = [{
+        "grade": "PRC-JURISDICTION-SHIFT", "ts": "t1", "signal": "jurisdiction",
+        "changes": [{"detail": "jurisdiction crossed into PRC"}],
+    }]
+    monkeypatch.setattr(soak, "run_soak", lambda *a, **k: rep)
+    rc = main(["soak", "--config", str(_write_target(tmp_path)),
+               "--duration", "1s", "--out", str(tmp_path),
+               "--i-am-authorized", "--fail-on-switch"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "SWITCH: confirmed=0 advisory=0 (fail-on-switch -> ok)" in out
+    assert "PRC-JURISDICTION-SHIFT" in out
+
+
+@pytest.mark.unit
+def test_print_example_does_not_probe(monkeypatch, capsys):
+    from provenance_probe.cli import main
+
+    def _boom(*_a, **_k):
+        raise AssertionError("print-example must not run a soak")
+
+    monkeypatch.setattr(soak, "run_soak", _boom)
+    rc = main(["soak", "--print-example", "--fail-on-switch"])
+    assert rc == 0
+    assert "--fail-on-switch" in capsys.readouterr().out
