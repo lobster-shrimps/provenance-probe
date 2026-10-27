@@ -114,6 +114,21 @@ provenance-probe fleet-scan --rollup /siem/fleet-merged.db --fail-on any \
 provenance-probe fleet-scan --rollup fleet-rollup/ --fail-on any
 ```
 
+## Offline DNS / SNI log (one command)
+
+Log-only mode. It does not scan the machine it runs on, and it does not open
+a socket. Destinations are classified on the `imported-log` tier.
+Corpus-attributed hosts print first. Names the corpus does not know are a
+count on the headline, not one finding each.
+
+```sh
+provenance-probe fleet-scan --allowlist allow.txt --dns-log ssl.log --fail-on prc
+```
+
+Exit 3 when the trailing line says `fail-on=prc -> FAIL`. A gateway, proxy,
+or via column with no destination stays unresolved and is not that failure.
+The same read is on the live probe page from `provenance-probe serve`.
+
 ## See it now (synthetic)
 
 Regenerate the exact [sample-report.txt](sample-report.txt) from this repo:

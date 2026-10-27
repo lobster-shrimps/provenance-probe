@@ -46,9 +46,9 @@ of a posture, not the subject of a dragnet.
 ## Offline DNS / SNI / proxy log
 
 Config files and a one-moment socket table miss traffic the network already
-logged. `fleet-scan --dns-log` reads a Zeek `#fields` log or a CSV and
-classifies destinations with the corpus and the allowlist. It does not scan
-the machine it runs on, and it does not open a socket.
+logged. Log-only mode: `fleet-scan --dns-log` reads a Zeek `#fields` log or
+a CSV and classifies destinations with the corpus and the allowlist. It does
+not scan the machine it runs on, and it does not open a socket.
 
 Default destination columns are `query`, `server_name`, `sni`, `ssl.sni`,
 `http.host`, and `http.hostname`. A bare `host` column is not a destination
@@ -71,9 +71,18 @@ A `gateway`, `proxy`, or `via` column with no destination stays
 turn the row into a sanctioned upstream: the log never named one. An empty
 or unreadable file, or a file with no recognized destination column, exits 3.
 
-Write `--json --out report.json`, then
-`fleet-scan --rollup report.json --fail-on prc`. The rollup counts
-`attribution.origin`. It does not run in the same command as `--dns-log`.
+One command prints that report and gates it. Corpus hits come first, the
+headline carries the unattributed count, and the last line is the exposure
+gate. Exit 3 when a PRC-origin host is present:
+
+```sh
+provenance-probe fleet-scan --allowlist allow.txt --dns-log ssl.log --fail-on prc
+```
+
+`provenance-probe serve` shows the same result on the live probe page
+(corpus hits first, the unattributed count, and `fail-on=prc -> FAIL`).
+`--json --out report.json` is still a rollup input if you want the
+multi-machine report: `fleet-scan --rollup report.json --fail-on prc`.
 
 `.cursor/mcp.json` is one of the config files the home scan already opens. A
 remote MCP server is often a `url`, or an `https://` host in `command` /

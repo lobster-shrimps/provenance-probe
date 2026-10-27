@@ -544,6 +544,48 @@ def index():
     return Response(_with_service_pick(doc), mimetype="text/html")
 
 
+@app.post("/api/imported-log")
+def api_imported_log():
+    """Read a handed-over DNS/SNI/proxy log. No home scan and no network.
+
+    The JSON is the same facts as
+    ``fleet-scan --dns-log ssl.log --fail-on prc``: corpus hits first, on
+    the imported-log tier, unattributed names as a count, and the rollup
+    exposure line. A PRC-origin hit sets ``exposure.exit_code`` to 3.
+    """
+    from .fleet.dnslog import LogUnavailable, scan_log
+    from .fleet.rollup import _exposure_line, exposure_summary, rollup_from_scan
+
+    spec = request.get_json(silent=True) or {}
+    text = spec.get("log") if isinstance(spec.get("log"), str) else ""
+    allow = spec.get("allowlist") if isinstance(spec.get("allowlist"), str) else ""
+    columns = spec.get("columns") if isinstance(spec.get("columns"), str) else ""
+    if not text.strip():
+        return jsonify({"error": "empty log is not a clean bill", "exit_code": 3}), 400
+    try:
+        result = scan_log(text, allow, columns=columns or None)
+    except LogUnavailable as exc:
+        return jsonify({"error": f"{exc} (not a clean bill)", "exit_code": 3}), 400
+    gate = exposure_summary(rollup_from_scan(result), "prc")
+    findings = []
+    for finding in result.findings:
+        attr = finding.attribution
+        findings.append({
+            "host": finding.host,
+            "classification": finding.classification,
+            "evidence_tier": finding.evidence_tier,
+            "origin": attr.origin if attr else "",
+            "operator": attr.operator if attr else "",
+        })
+    return jsonify({
+        "headline": result.headline,
+        "unattributed_names": result.unattributed_names,
+        "findings": findings,
+        "exposure": gate,
+        "exposure_line": _exposure_line(gate),
+    })
+
+
 # Body fragment (rendered inside _doc, which supplies the poster + shared CSS).
 # Still a .format() template: {trace}{resolve}{err} placeholders, and literal
 # JSON braces are doubled ({{ }}).
@@ -1879,6 +1921,29 @@ __FLOW__
 
 <div id=out></div>
 
+<div class=card id=imported-log>
+ <h3>Imported DNS / SNI log</h3>
+ <div class=stat style="margin:-2px 0 12px">Log-only mode. This does not scan this machine and does not open a socket.
+  Corpus hits are findings on the <span class=mono>imported-log</span> tier and come first.
+  Names the corpus does not know are a count. A PRC-origin hit fails
+  <span class=mono>--fail-on prc</span>.</div>
+ <p class=stat style="margin:0 0 12px">Same command:
+  <span class=mono>provenance-probe fleet-scan --allowlist allow.txt --dns-log ssl.log --fail-on prc</span></p>
+ <div class=row><label>Log (Zeek #fields or CSV)</label>
+  <textarea id=dns_log rows=6 style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:7px;font:13px ui-monospace,monospace;background:#fcfcfd"
+   placeholder="server_name&#10;api.deepseek.com"></textarea></div>
+ <div class="row grid">
+  <div><label>Allowlist (one host per line)</label>
+   <textarea id=dns_allow rows=3 style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:7px;font:13px ui-monospace,monospace;background:#fcfcfd"
+    placeholder="api.openai.com"></textarea></div>
+  <div><label>Column map (optional)</label>
+   <input type=text id=dns_columns placeholder="dest=url,client=src_ip,time=ts"></div>
+ </div>
+ <button id=dns_go type=button onclick=readLog()>Read log</button>
+ <div id=log_err class="err hide" style="margin:10px 0 0"></div>
+ <div id=log_out class=stat></div>
+</div>
+
 <div class=card><h3>Monitor · compare two runs for a silent model swap</h3>
  <div class=stat style="margin:-2px 0 12px">Same diff the CLI <span class=mono>monitor</span> uses:
   fingerprint, overhead-corrected tokenizer shape, error schema, verdicts, latency.</div>
@@ -1946,6 +2011,26 @@ function poll(rid){
    probeErr("Lost contact with the probe on your machine while it was running. Make sure provenance-probe is still running, then try again.");});
 }
 function esc(s){return (s||'').replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}
+function readLog(){
+ const err=$('log_err'); if(err){err.textContent=''; err.classList.add('hide')}
+ if($('log_out')) $('log_out').textContent='';
+ fetch('/api/imported-log',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({log:$('dns_log').value, allowlist:$('dns_allow').value,
+   columns:$('dns_columns').value.trim()})})
+  .then(r=>r.json().then(d=>({ok:r.ok,d}))).then(({ok,d})=>{
+   if(!ok||d.error){if(err){err.textContent=d.error||'That log could not be read.'; err.classList.remove('hide')} return}
+   const hits=(d.findings||[]).map(f=>'<li><span class=mono>'+esc(f.host)+'</span> '
+    +esc(f.classification)+' <span class=stat>'+esc(f.evidence_tier)
+    +(f.origin?(' '+esc(f.origin)):'')+'</span></li>').join('');
+   let h='<p>'+esc(d.headline)+'</p>';
+   h+='<p>Unattributed names: '+esc(String(d.unattributed_names||0))+'</p>';
+   h+=hits?('<ul>'+hits+'</ul>'):'<p>No corpus hits.</p>';
+   const line=d.exposure_line||'';
+   const fail=/-> FAIL/.test(line);
+   h+='<p class=mono'+(fail?' style="font-weight:700"':'')+'>'+esc(line)+'</p>';
+   $('log_out').innerHTML=h;
+  }).catch(()=>{if(err){err.textContent="Couldn't reach the probe running on your machine."; err.classList.remove('hide')}});
+}
 // "Watch this" hand-off: carry the target config (NOT the key or cookie) to the
 // client-side watch page via the query string, so the operator lands one step from
 // pinning a baseline. The API key/cookie are collected fresh in the browser on

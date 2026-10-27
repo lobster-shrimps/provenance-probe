@@ -160,6 +160,19 @@ Reports persist to `/data` in the container (`~/.provenance-probe/reports` local
 | `monitor` | Diff two runs; **exit 2 on drift** — wire into CI to catch silent swaps |
 | `build-reference` / `build-reference-endpoint` / `verify-reference` | Manage the tokenizer reference corpus |
 | `init` | Write an example `targets.json` |
+| `fleet-scan` | Allowlist drift on this machine, or a log-only DNS/SNI read (`--dns-log`) |
+
+### Fleet log (one command)
+
+Log-only mode. `fleet-scan --dns-log` does not scan the machine it runs on.
+Hosts the corpus recognizes are findings on the `imported-log` tier and print
+first. Other names are a count. Exit 3 when a PRC-origin host is in the log:
+
+```bash
+provenance-probe fleet-scan --allowlist allow.txt --dns-log ssl.log --fail-on prc
+```
+
+`provenance-probe serve` shows that same result on the live probe page.
 
 ### 🕰️ Always-on watch daemon (`watch`)
 

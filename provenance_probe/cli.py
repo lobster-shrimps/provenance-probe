@@ -900,13 +900,16 @@ def cmd_fleet_scan(a):
               "--ja3, or --trust-store.", file=_sys.stderr)
         return 1
 
-    # --fail-on / --fail-on-exposure gate the rollup ONLY; using either without
-    # --rollup (e.g. with --print) is an argparse error (exit 2). Resolve the effective
-    # mode: an explicit --fail-on always wins; --fail-on-exposure is an alias for `any`.
+    # --fail-on / --fail-on-exposure gate a rollup or a handed-over log. Using
+    # either without one of those (e.g. with --print) is an argparse error
+    # (exit 2). An explicit --fail-on always wins; --fail-on-exposure is `any`.
     _fail_on_explicit = getattr(a, "fail_on", None)
     _fail_on_exposure = getattr(a, "fail_on_exposure", False)
-    if (_fail_on_explicit is not None or _fail_on_exposure) and not getattr(a, "rollup", None):
-        a._parser.error("--fail-on / --fail-on-exposure apply only with --rollup")
+    if ((_fail_on_explicit is not None or _fail_on_exposure)
+            and not getattr(a, "rollup", None)
+            and not getattr(a, "dns_log", None)):
+        a._parser.error(
+            "--fail-on / --fail-on-exposure apply only with --rollup or --dns-log")
     fail_on = _fail_on_explicit if _fail_on_explicit is not None else (
         "any" if _fail_on_exposure else "none")
 
@@ -1125,6 +1128,13 @@ def cmd_fleet_scan(a):
     else:
         result = run_scan(allowlist_text, home="~")
     redact = not a.no_redact
+    # The log gate is the rollup exposure object, computed on the findings
+    # only. Unattributed names are a count on the headline, not drift.
+    log_gate = None
+    if getattr(a, "dns_log", None) and (
+            _fail_on_explicit is not None or _fail_on_exposure):
+        from .fleet.rollup import _exposure_line, exposure_summary, rollup_from_scan
+        log_gate = exposure_summary(rollup_from_scan(result), fail_on)
 
     # Stamp the report with this machine's id + scan time so a directory-of-JSON
     # rollup can carry machine identity + freshness (WS3). Reuse one timestamp so
@@ -1135,11 +1145,17 @@ def cmd_fleet_scan(a):
     scan_machine = getattr(a, "machine_id", None) or _socket.gethostname()
     scan_at = _now_iso()
 
+    payload = to_json(result, redact=redact, machine=scan_machine,
+                      scanned_at=scan_at)
+    if log_gate is not None:
+        payload["exposure"] = log_gate
     if a.json:
-        print(_json.dumps(to_json(result, redact=redact, machine=scan_machine,
-                                  scanned_at=scan_at), indent=2))
+        print(_json.dumps(payload, indent=2))
     else:
         print(render_console(result, redact=redact))
+        if log_gate is not None:
+            print()
+            print(_exposure_line(log_gate))
 
     if getattr(a, "sqlite", None):
         # SQLite sink for osquery ATC delivery (0600, redacted source by default).
@@ -1161,9 +1177,10 @@ def cmd_fleet_scan(a):
         flags = _os.O_WRONLY | _os.O_CREAT | _os.O_TRUNC | getattr(_os, "O_NOFOLLOW", 0)
         fd = _os.open(out_path, flags, 0o600)
         with _os.fdopen(fd, "w", encoding="utf-8") as fh:
-            _json.dump(to_json(result, redact=redact, machine=scan_machine,
-                               scanned_at=scan_at), fh, indent=2)
+            _json.dump(payload, fh, indent=2)
 
+    if log_gate is not None and log_gate["exit_code"]:
+        return log_gate["exit_code"]
     if a.exit_code and result.drifted > 0:
         return 2
     return 0
@@ -1476,17 +1493,31 @@ def main(argv=None):
                    help="attest written authorization to send adversarial prompts")
     s.set_defaults(func=cmd_redteam)
 
-    s = sub.add_parser("fleet-scan",
-                       help="read-only, no-egress host scan: find AI router/gateway tools "
-                            "(OmniRoute-class) configured on this machine, resolve localhost "
-                            "gateways to their real upstream, and report allowlist drift")
+    s = sub.add_parser(
+        "fleet-scan",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        help="read-only, no-egress host scan: find AI router/gateway tools "
+             "(OmniRoute-class) configured on this machine, resolve localhost "
+             "gateways to their real upstream, and report allowlist drift",
+        epilog=(
+            "Log-only partner command. It does not scan this machine. "
+            "Corpus-attributed hosts print first, on the imported-log tier. "
+            "Names the corpus does not know are a count. Exit 3 when a "
+            "PRC-origin host is present:\n"
+            "\n"
+            "  provenance-probe fleet-scan --allowlist allow.txt "
+            "--dns-log ssl.log --fail-on prc\n"
+        ),
+    )
     s.add_argument("--allowlist", help="path to the operator allowlist (one host per line; "
                                        "# comments ok). Without it, everything reads as drift.")
     s.add_argument("--dns-log",
                    help="offline DNS, SNI, or proxy log (Zeek #fields or CSV). "
                         "Log only: does not scan this machine. No network. "
-                        "Corpus-attributed hosts are findings; other names are "
-                        "a count. An empty or unreadable file is not a clean "
+                        "Tier imported-log. Corpus-attributed hosts are "
+                        "findings and come first; other names are a count. "
+                        "Pair with --fail-on prc (the command is in the "
+                        "epilog). An empty or unreadable file is not a clean "
                         "result (exit 3). A gateway, proxy, or via column with "
                         "no destination stays unresolved.")
     s.add_argument("--dns-columns",
@@ -1510,11 +1541,13 @@ def main(argv=None):
     s.add_argument("--stale-days", type=int, default=7,
                    help="freshness threshold for --rollup in days (default 7)")
     s.add_argument("--fail-on", choices=["prc", "drift", "any", "none"], default=None,
-                   help="with --rollup: exit 3 when the fleet shows exposure so cron/CI/"
-                        "SIEM can alert. prc = any PRC-origin finding; drift = any "
-                        "off-allowlist finding; any = prc OR drift; none = never gate "
-                        "(default, backward-compatible). Unresolved is never exposure; "
-                        "an error still exits 2 (outranks). Report body still prints.")
+                   help="with --rollup or --dns-log: exit 3 when exposure matches "
+                        "so cron/CI/SIEM can alert. prc = any PRC-origin finding; "
+                        "drift = any off-allowlist finding; any = prc OR drift; "
+                        "none = never gate (default). Unresolved is never exposure, "
+                        "and an unattributed-name count is not drift. An error "
+                        "still exits 2 (outranks). The report still prints, then "
+                        "EXPOSURE: prc=N drift=M (fail-on=... -> FAIL|ok).")
     s.add_argument("--fail-on-exposure", action="store_true",
                    help="convenience alias for --fail-on any (an explicit --fail-on "
                         "wins if both are given)")
@@ -1574,4 +1607,4 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

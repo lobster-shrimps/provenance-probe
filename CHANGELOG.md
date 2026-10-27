@@ -12,6 +12,13 @@
   inventory). The caught trace matches the ids already in that file. A prefill
   completion from the dataset README stays quiet. No new behavior ids.
 
+- **Partner log gate.** One command, still log-only:
+  `provenance-probe fleet-scan --allowlist allow.txt --dns-log ssl.log --fail-on prc`.
+  Corpus hits print first on the `imported-log` tier, unattributed names stay
+  a count, and the trailing line is `EXPOSURE: prc=N drift=M (fail-on=prc -> FAIL|ok)`.
+  Exit 3 on a PRC-origin hit. `provenance-probe serve` shows the same result
+  on the live probe page.
+
 - **Offline DNS / SNI / proxy-log join.** `fleet-scan --dns-log` is log-only:
   it does not scan the operator's home. Destination hosts in a Zeek `#fields`
   log or a CSV are classified against the corpus and the allowlist on the

@@ -484,6 +484,33 @@ def build_report(rollup: Rollup) -> dict:
 FAIL_ON_MODES = ("none", "prc", "drift", "any")
 
 
+def rollup_from_scan(result, *, machine: str = "imported-log") -> Rollup:
+    """One-machine rollup over a log or host scan.
+
+    Names that never became findings (the unattributed count) stay out of
+    the tallies, so drift is the corpus hits the log already classified.
+    ``exposure_summary`` on this object is the same gate ``--rollup`` uses.
+    """
+    rows = []
+    for f in result.findings:
+        attr = f.attribution
+        rows.append(RFinding(
+            host=f.host or "",
+            base_url=f.base_url or "",
+            classification=f.classification or "",
+            evidence_tier=f.evidence_tier or "",
+            via_gateway=f.via_gateway or "",
+            operator=attr.operator if attr else "",
+            origin=attr.origin if attr else "",
+            confidence=attr.confidence if attr else None,
+            source=f.source or "",
+        ))
+    return Rollup(
+        machines=[Machine(machine=machine, scanned_at=None, findings=tuple(rows))],
+        machines_scanned=1,
+    )
+
+
 def exposure_counts(rollup: Rollup) -> dict:
     """FINDING-level exposure tallies (NOT the endpoint-grouped rogue-upstream count).
 
