@@ -100,7 +100,9 @@ Two things to understand before you enable it:
   **installing process** of a rogue CA is not captured here (the macOS keychain
   records no PID); attributing *who* installed it needs an EDR/osquery event hook.
 
-macOS and Linux only for now. On an unsupported OS (or if the reader can't run),
+macOS, Linux, and Windows. On Windows the reader uses PowerShell to list the
+LocalMachine and CurrentUser root stores. On an unsupported OS (or if the reader
+can't run),
 `fleet-scan --trust-store` **refuses with a non-zero exit (3, "host not certified
 clean")** rather than reporting a green result — a host whose store was never read
 is never counted as clean.
