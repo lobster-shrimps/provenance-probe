@@ -1391,7 +1391,9 @@ def main(argv=None):
     _mode.add_argument("--print-launchd", action="store_const", dest="mode", const="launchd",
                        help="emit a macOS launchd plist that runs watch --once "
                             "(not --loop) on StartInterval. Private timer: "
-                            "--interval 12h --config examples/private-watch.json")
+                            "--interval 12h --config examples/private-watch.json "
+                            "(three authorized xAI Grok models, XAI_API_KEY, "
+                            "not the Observatory nightly six)")
     _mode.add_argument("--print-systemd", action="store_const", dest="mode", const="systemd",
                        help="emit a Linux systemd service + timer that run watch --once "
                             "(not --loop). Private timer: --interval 12h")

@@ -183,7 +183,7 @@ provenance-probe watch --pin   --config examples/private-watch.json
 provenance-probe watch --once  --config examples/private-watch.json   # one pass; exit 2 on drift
 ```
 
-The private list is three Gemini flash models (`GEMINI_API_KEY`). They are not the Observatory nightly six (DeepSeek, OpenAI, Anthropic, Moonshot). Behavioral checks stay off. Do not also start `watch --loop`.
+The private list is three xAI Grok models (`XAI_API_KEY`): `grok-4.20-0309-non-reasoning`, `grok-4.3`, and `grok-4.6` at `https://api.x.ai/v1`. They are not the Observatory nightly six (DeepSeek, OpenAI, Anthropic, Moonshot). Behavioral checks stay off. Do not also start `watch --loop`.
 
 First run **seeds** a per-target baseline under `~/.provenance-probe/watch/<target>/` (no drift). On drift you get a stderr **MODEL SWITCH DETECTED** banner, a machine-readable record appended to `switches.jsonl`, a best-effort desktop notification, and — with `--webhook <url>` — a POST of the (secret-free) switch record. Keys/cookies read from your config **never** appear in any alert sink.
 
@@ -204,9 +204,9 @@ provenance-probe watch --print-systemd --config examples/private-watch.json --in
 
 Pin once before the first timer fire. The unit runs `watch --once`. It does not pass `--behavioral` or `--loop`. The 60-minute loop default is not this timer.
 
-Launchd does not read your shell rc. `GEMINI_API_KEY` has to be in the job's environment. Do not put the key in the plist or in git.
+Launchd does not read your shell rc. `XAI_API_KEY` has to be in the job's environment. Do not put the key in the plist or in git.
 
-**Observatory.** A new API or web target is an entry in the Observatory `targets.yaml`. The field guide is that repo's `docs/adding-targets.md`. Leave `authorized: false` until there is written authorization. The Add target wizard (`provenance-probe serve`, then `/wizard`) writes the same fields into a local JSON file. The nightly cron stays `17 3 * * *` UTC. Do not add these three Gemini models there; this 12-hour watch is the other clock.
+**Observatory.** A new API or web target is an entry in the Observatory `targets.yaml`. The field guide is that repo's `docs/adding-targets.md`. Leave `authorized: false` until there is written authorization. The Add target wizard (`provenance-probe serve`, then `/wizard`) writes the same fields into a local JSON file. The nightly cron stays `17 3 * * *` UTC. Do not add these three Grok models there; this 12-hour watch is the other clock.
 
 ### 🛰️ Live agent flight recorder (`sentinel`)
 

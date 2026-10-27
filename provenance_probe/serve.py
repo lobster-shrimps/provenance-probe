@@ -2241,7 +2241,7 @@ or track the service on the
  <div id=unattended class=stat style="margin-top:8px">Unattended timer: every 12 hours, one pass, then exit.
   <span class=mono>provenance-probe watch --print-launchd --config examples/private-watch.json --interval 12h</span>
   runs <span class=mono>watch --once</span>. Behavioral checks stay off. Do not also start <span class=mono>watch --loop</span>.
-  The three targets in that file are Gemini flash models, not the Observatory nightly six.</div>
+  The three targets in that file are xAI Grok models (`XAI_API_KEY`), not the Observatory nightly six.</div>
  <div id=addtarget class=stat style="margin-top:8px">A new API or web target reaches the Observatory as an entry in
   <span class=mono>targets.yaml</span> (<span class=mono>docs/adding-targets.md</span> in that repo). Leave it unauthorized until there is written authorization.
   The 03:17 UTC nightly cron does not change. The <a href="/wizard">Add target</a> wizard writes the same fields into a local JSON file for this watch.</div>

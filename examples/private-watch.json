@@ -1,29 +1,29 @@
 [
   {
-    "name": "gemini-flash-latest",
-    "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
-    "model": "gemini-flash-latest",
+    "name": "grok-4.20-0309-non-reasoning",
+    "base_url": "https://api.x.ai/v1",
+    "model": "grok-4.20-0309-non-reasoning",
     "api_style": "openai",
-    "auth_value_env": "GEMINI_API_KEY",
+    "auth_value_env": "XAI_API_KEY",
     "authorized": true,
-    "notes": "Private 12h watch. Not one of the Observatory nightly six. Flash tier."
+    "notes": "Private 12h watch. Not one of the Observatory nightly six. xAI Grok."
   },
   {
-    "name": "gemini-2.5-flash",
-    "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
-    "model": "gemini-2.5-flash",
+    "name": "grok-4.3",
+    "base_url": "https://api.x.ai/v1",
+    "model": "grok-4.3",
     "api_style": "openai",
-    "auth_value_env": "GEMINI_API_KEY",
+    "auth_value_env": "XAI_API_KEY",
     "authorized": true,
-    "notes": "Private 12h watch. Not one of the Observatory nightly six. Flash tier."
+    "notes": "Private 12h watch. Not one of the Observatory nightly six. xAI Grok."
   },
   {
-    "name": "gemini-flash-lite-latest",
-    "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
-    "model": "gemini-flash-lite-latest",
+    "name": "grok-4.6",
+    "base_url": "https://api.x.ai/v1",
+    "model": "grok-4.6",
     "api_style": "openai",
-    "auth_value_env": "GEMINI_API_KEY",
+    "auth_value_env": "XAI_API_KEY",
     "authorized": true,
-    "notes": "Private 12h watch. Not one of the Observatory nightly six. Flash tier."
+    "notes": "Private 12h watch. Not one of the Observatory nightly six. xAI Grok."
   }
 ]

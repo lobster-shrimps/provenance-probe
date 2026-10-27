@@ -6,11 +6,13 @@
 
 ## [Unreleased]
 
-- **Private 12-hour watch.** `examples/private-watch.json` is three Gemini flash
-  models, not the Observatory nightly six. The timer is the existing
-  `watch --print-launchd` / `--print-systemd` path with `--interval 12h`.
-  It runs `watch --once` and does not pass `--behavioral` or `--loop`.
-  Pin once, then let the timer fire. The nightly cron stays `17 3 * * *` UTC.
+- **Private 12-hour watch.** `examples/private-watch.json` is three xAI Grok
+  models (`grok-4.20-0309-non-reasoning`, `grok-4.3`, `grok-4.6`) with
+  `XAI_API_KEY`, not Gemini and not the Observatory nightly six. The timer is
+  the existing `watch --print-launchd` / `--print-systemd` path with
+  `--interval 12h`. It runs `watch --once` and does not pass `--behavioral`
+  or `--loop`. Pin once, then let the timer fire. The nightly cron stays
+  `17 3 * * *` UTC.
 
 - **Pinned Qwen trace.** The published
   `CohereLabs/10-2026-qwen-investigation-traces` JSONL is graded by the

@@ -36,20 +36,20 @@ def client():
 
 
 @pytest.mark.unit
-def test_private_watch_is_three_authorized_gemini_models():
+def test_private_watch_is_three_authorized_grok_models():
     targets = load_targets(str(CONFIG))
     assert len(targets) == 3
     assert [t.name for t in targets] == [
-        "gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest",
+        "grok-4.20-0309-non-reasoning", "grok-4.3", "grok-4.6",
     ]
     for t in targets:
         assert t.authorized is True
-        assert t.auth_value_env == "GEMINI_API_KEY"
+        assert t.auth_value_env == "XAI_API_KEY"
         assert t.api_style == "openai"
         host = urlsplit(t.base_url).hostname
-        assert host == "generativelanguage.googleapis.com"
+        assert host == "api.x.ai"
         assert host not in NIGHTLY_HOSTS
-        assert "flash" in t.model
+        assert t.model.startswith("grok-")
 
 
 @pytest.mark.unit
@@ -90,6 +90,7 @@ def test_watch_help_names_the_12h_once_timer(capsys):
     assert "12h" in out
     assert "--once" in out
     assert "examples/private-watch.json" in out
+    assert "XAI_API_KEY" in out
     assert "not --loop" in out or "Do not install this beside" in out
 
 
@@ -103,6 +104,9 @@ def test_docs_name_the_timer_and_the_observatory_add_path():
     assert "targets.yaml" in readme
     assert "adding-targets.md" in readme
     assert "Behavioral checks stay off" in readme
+    assert "XAI_API_KEY" in readme
+    assert "grok-4.3" in readme
+    assert "GEMINI_API_KEY" not in readme
     raw = json.loads(CONFIG.read_text(encoding="utf-8"))
     assert len(raw) == 3
 
@@ -115,6 +119,9 @@ def test_watch_page_shows_the_12h_timer_and_add_path(client):
     assert "watch --once" in body
     assert "watch --loop" in body
     assert "Behavioral checks stay off" in body
+    assert "XAI_API_KEY" in body
+    assert "xAI Grok models" in body
+    assert "Gemini flash" not in body
     assert "targets.yaml" in body
     assert "adding-targets.md" in body
     assert "03:17 UTC" in body
