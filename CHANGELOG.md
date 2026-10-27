@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+- **Pinned Qwen trace.** The published
+  `CohereLabs/10-2026-qwen-investigation-traces` JSONL is graded by the
+  existing checker (Pi JSONL; semicolon-separated commands count as the same
+  inventory). The caught trace matches the ids already in that file. A prefill
+  completion from the dataset README stays quiet. No new behavior ids.
+
 - **MCP server hosts.** `.cursor/mcp.json` now contributes an MCP `url` and a
   host in `command` / `args`, with header values and URL userinfo stripped.
   The same host is not counted twice when a `base_url` is also present. A

