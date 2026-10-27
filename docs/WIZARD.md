@@ -62,7 +62,17 @@ where the reply and token counts live.
 ## What happens when you save
 
 The wizard runs a quick 2-probe **dry-run** before saving, to make sure replaying
-the request is safe (it won't spam your real chat or fail). Then:
+the request is safe (it won't spam your real chat or fail).
+
+A signed app (a new signature on every request) or a chat that remembers earlier
+messages can reject that replay. The tool does not pretend the replay worked, and
+it does not confirm a model switch from what the model calls itself. A switch can
+still be flagged by a fresh check — the tokenizer measurement, or the shape of
+the API response — and the verdict says the replay was impossible and which of
+those two signals carried it. If neither was measured, the verdict is not a clean
+bill.
+
+Then:
 
 - The target config is written to `targets.json` (safe to commit — no secrets).
 - If the request had a session cookie, it's written to `.env.capture`, which is

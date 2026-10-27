@@ -261,3 +261,54 @@ def test_both_axes_at_once_are_set_independently():
 def test_identical_runs_have_shift_false():
     out = monitor.diff(_bundle(VEC), dict(_bundle(VEC)))
     assert out["prc_jurisdiction_shift"] is False
+
+
+# Signed/stateful replay cannot be pretended. A fresh tokenizer battery or wire
+# fingerprint can still carry the verdict. Self-ID never confirms a switch.
+_GLM = {"a": 10, "b": 40, "c": 15, "d": 70, "e": 13, "f": 3}
+
+
+def test_unreplayable_tokenizer_confirms_and_names_the_signal():
+    out = monitor.grade_unreplayable(
+        _bundle(VEC), _bundle(_GLM), reason="signed", self_id_changed=True)
+    assert out["replay"] == "impossible" and out["replay_carried"] is False
+    assert out["signal"] == "tokenizer"
+    assert out["confirmed_switch"] is True and out["switch_detected"] is True
+    assert out["self_id_confirmed"] is False
+    assert "Replay was impossible" in out["note"]
+    assert "tokenizer battery carried this verdict" in out["note"]
+    assert "did not confirm it" in out["note"]
+
+
+def test_unreplayable_wire_flags_without_confirming():
+    out = monitor.grade_unreplayable(
+        _bundle(VEC, err="sig-1"), _bundle(VEC, err="sig-2"), reason="stateful")
+    assert out["signal"] == "wire"
+    assert out["switch_detected"] is True and out["confirmed_switch"] is False
+    assert out["self_id_confirmed"] is False
+    assert "wire fingerprint carried this verdict" in out["note"]
+    assert "does not confirm" in out["note"]
+
+
+def test_unreplayable_self_id_alone_does_not_confirm():
+    out = monitor.grade_unreplayable(
+        _bundle(VEC), _bundle(VEC), reason="signed", self_id_changed=True)
+    assert out["signal"] == "none"
+    assert out["switch_detected"] is False and out["confirmed_switch"] is False
+    assert out["self_id_confirmed"] is False
+    assert "does not confirm a switch" in out["note"]
+
+
+def test_unreplayable_without_a_live_signal_is_not_a_clean_bill():
+    out = monitor.grade_unreplayable(None, None, reason="signed-or-stateful")
+    assert out["signal"] == "none" and out["switch_detected"] is False
+    assert "not a clean bill" in out["note"]
+    assert "Replay was impossible" in out["note"]
+
+
+def test_unreplayable_one_sided_tokenizer_does_not_become_a_wire_switch():
+    bare = _bundle(VEC)
+    bare["tokenizer"] = {"usable": False, "vector": {}}
+    out = monitor.grade_unreplayable(_bundle(VEC), bare, reason="signed")
+    assert out["signal"] == "none"
+    assert out["confirmed_switch"] is False and out["switch_detected"] is False

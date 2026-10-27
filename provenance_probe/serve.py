@@ -1338,16 +1338,26 @@ def wizard_capture_import():
 
     hosted = egress.guard_enabled()
     if not dr["ok"]:
-        # The existing stale/stateful message: a signed/stateful request or an
-        # expired cookie can't replay -> re-capture (and nothing is saved).
-        return jsonify({"ok": False, "target": syn.target, "warnings": syn.warnings,
-                        "error": dr["error"]}), 200
+        # A signed or stateful request cannot be replayed. Say so, and do not
+        # pretend the captured exchange was re-scored. Nothing is saved.
+        err = dr["error"]
+        note = (dr.get("verdict") or {}).get("note")
+        if note:
+            err = f"{err} {note}"
+        body = {"ok": False, "target": syn.target, "warnings": syn.warnings, "error": err}
+        if dr.get("verdict"):
+            body["verdict"] = dr["verdict"]
+        return jsonify(body), 200
     if not dr["replay_safe"]:
-        return jsonify({"ok": False, "target": syn.target, "warnings": syn.warnings,
-                        "error": "the capture looks stale/stateful — the two dry-run "
-                                 "probes did not behave independently (missing reply or "
-                                 "unstable prompt-token counts). Re-capture a single-turn "
-                                 "request."}), 200
+        verdict = dr.get("verdict") or {}
+        err = verdict.get("note") or (
+            "the capture looks stale/stateful — the two dry-run probes did not "
+            "behave independently. Replaying the captured request cannot confirm "
+            "a switch.")
+        body = {"ok": False, "target": syn.target, "warnings": syn.warnings, "error": err}
+        if verdict:
+            body["verdict"] = verdict
+        return jsonify(body), 200
     # Usable target. NEVER return the cookie. On a guarded/public instance we do
     # NOT persist an authed web-app target (#53) — return it for review only.
     note = ("Dry-run succeeded. On the hosted demo the captured cookie was used "
@@ -1644,16 +1654,19 @@ def wizard_save():
         return _wiz_page("Dry-run error", f'<p class="err">Dry-run could not run: '
                          f'{html.escape(str(e))}</p><p><a href="/wizard">&larr; re-capture</a></p>')
     if not dr["ok"]:
+        note = html.escape((dr.get("verdict") or {}).get("note") or "")
+        extra = f'<p>{note}</p>' if note else ""
         return _wiz_page("Dry-run failed", f'<p class="err">Dry-run failed: '
-                         f'{html.escape(dr["error"])}</p><p><a href="/wizard">&larr; re-capture</a></p>')
+                         f'{html.escape(dr["error"])}</p>{extra}'
+                         '<p><a href="/wizard">&larr; re-capture</a></p>')
     if not dr["replay_safe"]:
-        # design: refuse to save a stateful/unstable target (replay would fail or
-        # spam the operator's real chat). usage-suppressed-but-stable stays safe.
-        return _wiz_page("Not replay-safe", '<p class="err">Refusing to save: the two dry-run '
-                         'probes did not behave independently (missing reply or unstable '
-                         'prompt-token counts). Replaying ~20 probes could fail or append to your '
-                         'real chat. Re-capture a single-turn request, or fix the response paths.'
-                         '</p><p><a href="/wizard">&larr; re-capture</a></p>')
+        # Replay did not work. The verdict says so and does not treat a replay
+        # as the measurement. usage-suppressed-but-stable stays safe to save.
+        note = html.escape((dr.get("verdict") or {}).get("note") or (
+            "Replay was impossible. This capture cannot be re-driven."))
+        return _wiz_page("Not replay-safe",
+                         f'<p class="err">{note}</p>'
+                         '<p><a href="/wizard">&larr; re-capture</a></p>')
     try:
         root = os.getcwd()
         res = wizard.write_target(target, cookie, config_path=os.path.join(root, "targets.json"),

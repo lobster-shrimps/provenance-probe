@@ -218,3 +218,73 @@ def diff(base: dict, cur: dict) -> dict:
             "only; a same-family model swap could go undetected and a no-drift result "
             "is not a clean bill of health.")
     return out
+
+
+# Why a captured request cannot be replayed. The verdict quotes one of these
+# and never claims the replay itself was measured.
+_REPLAY_REASONS = {
+    "signed": "the app signs each request, so a captured request cannot be replayed",
+    "stateful": "the app keeps conversation state, so a captured request cannot be replayed",
+    "signed-or-stateful": (
+        "the captured request was rejected, and a signature or session state "
+        "cannot be reproduced by replaying it"),
+}
+
+
+def grade_unreplayable(base: dict | None, cur: dict | None, *, reason: str,
+                       self_id_changed: bool = False) -> dict:
+    """Grade a model switch when static replay cannot re-drive the app.
+
+    ``base`` and ``cur`` are live measurements (the tokenizer battery and the
+    wire envelope ``diff`` / ``fingerprint`` already use). They are not a
+    replay of the captured request. A tokenizer-shape change confirms the
+    switch. A wire-fingerprint change flags one and does not confirm it. What
+    the model calls itself never confirms a switch and never sets
+    ``switch_detected`` by itself.
+
+    The returned note says replay was impossible and names the signal that
+    carried the verdict (``tokenizer``, ``wire``, or ``none``).
+    """
+    if reason not in _REPLAY_REASONS:
+        raise ValueError(
+            "replay reason must be one of " + ", ".join(sorted(_REPLAY_REASONS)))
+    confirmed = False
+    wire = False
+    if isinstance(base, dict) and isinstance(cur, dict):
+        confirmed = bool(diff(base, cur).get("drift_detected"))
+        comparable = _tokenizer_comparable(base, cur)
+        both_without = (not _tokenizer_usable(base)) and (not _tokenizer_usable(cur))
+        if confirmed:
+            pass
+        elif fingerprint(base) != fingerprint(cur) and (comparable or both_without):
+            wire = True
+    signal = "tokenizer" if confirmed else ("wire" if wire else "none")
+    return {
+        "replay": "impossible",
+        "replay_reason": reason,
+        "replay_carried": False,
+        "signal": signal,
+        "confirmed_switch": confirmed,
+        "switch_detected": confirmed or wire,
+        "self_id_confirmed": False,
+        "note": _unreplayable_note(_REPLAY_REASONS[reason], signal, self_id_changed),
+    }
+
+
+def _unreplayable_note(why: str, signal: str, self_id_changed: bool) -> str:
+    lead = f"Replay was impossible: {why}."
+    if signal == "tokenizer":
+        body = (" The live tokenizer battery carried this verdict: the tokenizer "
+                "shape changed, so the switch is CONFIRMED.")
+    elif signal == "wire":
+        body = (" The wire fingerprint carried this verdict: the response envelope "
+                "changed. That flags a switch and does not confirm it.")
+    elif self_id_changed:
+        return (lead + " What the model calls itself changed, and that does not "
+                "confirm a switch. No live tokenizer or wire signal carried this verdict.")
+    else:
+        return (lead + " No live tokenizer or wire measurement carried a verdict, "
+                "so this is not a confirmed switch and not a clean bill.")
+    if self_id_changed:
+        body += " What the model calls itself did not confirm it."
+    return lead + body

@@ -193,6 +193,34 @@ def test_dry_run_usage_suppressed_is_degraded_but_replay_safe():
 def test_dry_run_unstable_counts_flag_replay_unsafe():
     out = wizard.dry_run(_Client([(200, 7, "hi"), (200, 900, "ok")]))   # wild drift = stateful
     assert out["usage_exposed"] and not out["replay_safe"]
+    assert out["verdict"]["replay"] == "impossible"
+    assert out["verdict"]["replay_reason"] == "stateful"
+    assert out["verdict"]["signal"] == "none"
+    assert out["verdict"]["confirmed_switch"] is False
+
+
+def test_dry_run_rejected_replay_can_still_flag_a_live_tokenizer_switch():
+    from provenance_probe import monitor
+    base = {"tokenizer": {"usable": True, "vector": {"a": 10, "b": 12, "c": 15, "d": 11, "e": 13, "f": 14}},
+            "errors": {"error_signature": "sig"}, "headers": {"header_shape_hash": "h"},
+            "greedy": {"signature": "g"}, "streaming": {"chunk_fields": ["choices"]}}
+    cur = dict(base)
+    cur["tokenizer"] = {"usable": True, "vector": {"a": 10, "b": 40, "c": 15, "d": 70, "e": 13, "f": 3}}
+    out = wizard.dry_run(
+        _Client([(401, None, "")]),
+        live={"baseline": base, "current": cur, "self_id_changed": True})
+    v = out["verdict"]
+    assert not out["ok"] and "HTTP 401" in out["error"]
+    assert v["replay"] == "impossible" and v["replay_carried"] is False
+    assert v["signal"] == "tokenizer" and v["confirmed_switch"] is True
+    assert v["self_id_confirmed"] is False
+    assert monitor.grade_unreplayable(base, cur, reason="signed-or-stateful",
+                                      self_id_changed=True)["note"] == v["note"]
+
+
+def test_dry_run_that_replays_does_not_claim_replay_was_impossible():
+    out = wizard.dry_run(_Client([(200, 7, "hi"), (200, 8, "ok")]))
+    assert "verdict" not in out
 
 
 def test_dry_run_no_reply_is_not_ok():

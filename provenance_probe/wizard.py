@@ -25,6 +25,8 @@ import shlex
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
+from . import monitor
+
 # Body keys that carry per-conversation state. Replaying a captured request 20x
 # (the tokenizer battery) with a frozen conversation/message id can fail or
 # append to the operator's real chat, so we blank them and warn (design: replay
@@ -454,7 +456,18 @@ def synthesize(cap: Captured, prompt_text: str, name: str) -> Synthesis:
 # Dry-run (replay safety) — validate before saving
 # --------------------------------------------------------------------------- #
 
-def dry_run(client, probes=None) -> dict:
+def _live_grade(reason: str, live) -> dict:
+    """Verdict for a replay that did not work. ``live`` may carry fresh
+    tokenizer/wire bundles; it is never the captured request."""
+    base = cur = None
+    self_id = False
+    if isinstance(live, dict):
+        base, cur = live.get("baseline"), live.get("current")
+        self_id = bool(live.get("self_id_changed"))
+    return monitor.grade_unreplayable(base, cur, reason=reason, self_id_changed=self_id)
+
+
+def dry_run(client, probes=None, *, live=None) -> dict:
     """Send >=2 probes through the synthesized target and check replay safety.
 
     Design (P1): the tokenizer battery replays ~20 messages; if the captured
@@ -463,8 +476,14 @@ def dry_run(client, probes=None) -> dict:
     BEFORE save: both must return a reply and reported prompt-token usage that
     is stable (a stateful backend typically errors or drifts the count wildly).
 
+    When the replay is rejected or unstable, the result includes ``verdict``
+    from ``monitor.grade_unreplayable``. That verdict does not pretend the
+    captured request was re-driven. Optional ``live`` bundles are a fresh
+    tokenizer battery and wire fingerprint, not another replay.
+
     `client` is a provenance_probe.client.Client for the synthesized Target.
-    Returns {ok, usage_exposed, replay_safe, prompt_tokens, error}.
+    Returns {ok, usage_exposed, replay_safe, prompt_tokens, error} and, when
+    replay was impossible, ``verdict``.
     """
     probes = probes or ["Say hi.", "Reply with the word ok."]
     seen, got_reply = [], 0
@@ -474,7 +493,8 @@ def dry_run(client, probes=None) -> dict:
             return {"ok": False, "usage_exposed": False, "replay_safe": False,
                     "prompt_tokens": None,
                     "error": f"probe returned HTTP {r.status} — capture may be stale "
-                             f"(cookie expired / stateful request); re-capture."}
+                             f"(cookie expired / stateful request); re-capture.",
+                    "verdict": _live_grade("signed-or-stateful", live)}
         if (r.text() or "").strip():
             got_reply += 1
         seen.append(r.usage_prompt_tokens())
@@ -498,8 +518,11 @@ def dry_run(client, probes=None) -> dict:
         replay_safe = True
     else:
         replay_safe = False
-    return {"ok": True, "usage_exposed": usage_exposed, "replay_safe": replay_safe,
-            "prompt_tokens": usable, "error": None}
+    out = {"ok": True, "usage_exposed": usage_exposed, "replay_safe": replay_safe,
+           "prompt_tokens": usable, "error": None}
+    if not replay_safe:
+        out["verdict"] = _live_grade("stateful", live)
+    return out
 
 
 # --------------------------------------------------------------------------- #

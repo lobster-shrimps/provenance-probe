@@ -185,20 +185,28 @@ and re-scores it. Be honest about the boundary: **signed or stateful apps defeat
 static replay.** A per-request-signed API (an HMAC/nonce/timestamp over the body,
 a rotating CSRF or anti-replay token, a bound session — the z.ai shape) will reject
 a replayed capture, so the capture path cannot re-drive it. Robustness here means
-**detection quality *given* a capture**, not the ability to capture everything:
+**detection quality *given* a capture**, plus an honest grade from a fresh
+tokenizer battery and wire fingerprint when that replay cannot run:
 
 - **Caught given a capture:** a tokenizer-family change (overhead-invariant shape),
   a wire/error-schema change, a header/vendor change, and any hard artifact present
   in the captured client source. The redteam driver adds a fingerprint-based HARD
   switch (`fingerprint_switch`) so a router that swaps the backend while echoing a
   **constant** `model_id` still trips on the backend-envelope change.
-- **Missed / out of scope:** anything that requires *live, signed, multi-turn*
-  interaction the replay cannot reproduce; a swap hidden entirely behind an
-  identical response envelope with no tokenizer signal (usage suppressed) — the
-  degraded path, which `monitor.diff` already reports as *not a clean bill*; and
-  provenance from a chat claim alone, which the §4.1 ceiling caps at INDETERMINATE
-  by design. No over-claim: a green capture is evidence about the captured exchange,
-  not a guarantee about every future live request.
+- **When replay is impossible:** a signed or stateful app rejects the captured
+  request, and the capture is not re-scored as if that replay worked.
+  `monitor.grade_unreplayable` still flags a switch from a **fresh** live tokenizer
+  battery and the wire fingerprint — the same WS1 signals, which do not replay the
+  captured body. The verdict says replay was impossible and names the signal that
+  carried it: `tokenizer` confirms a shape change; `wire` flags an envelope change
+  and does not confirm it. What the model calls itself never confirms a switch.
+  The wizard and `capture` surface that verdict when the dry-run cannot replay.
+- **Still missed:** a swap hidden entirely behind an identical response envelope
+  with no tokenizer signal (usage suppressed) — the degraded path, which
+  `monitor.diff` already reports as *not a clean bill*; and provenance from a chat
+  claim alone, which the §4.1 ceiling caps at INDETERMINATE by design. No
+  over-claim: a green capture is evidence about the captured exchange, not a
+  guarantee about every future live request.
 
 ---
 

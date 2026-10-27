@@ -620,10 +620,13 @@ def _proxy_capture_and_save(a):
         extra_headers=t.get("extra_headers", {}), cookie=syn.cookie_value)
     dr = wizard.dry_run(Client(dry_target))
     if not dr["ok"]:
-        sys.exit(f"[capture] dry-run failed: {dr['error']}")
+        note = (dr.get("verdict") or {}).get("note")
+        extra = f" {note}" if note else ""
+        sys.exit(f"[capture] dry-run failed: {dr['error']}{extra}")
     if not dr["replay_safe"]:
-        sys.exit("[capture] refusing to save: not replay-safe (missing reply or unstable "
-                 "prompt-token counts). Re-capture a single-turn request.")
+        note = (dr.get("verdict") or {}).get("note") or (
+            "Replay was impossible. Refusing to save a capture that cannot be replayed.")
+        sys.exit("[capture] refusing to save: " + note)
     root = os.getcwd()
     saved = wizard.write_target(t, syn.cookie_value,
                                 config_path=os.path.join(root, "targets.json"),
